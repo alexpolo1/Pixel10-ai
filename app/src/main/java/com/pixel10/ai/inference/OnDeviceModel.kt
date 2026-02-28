@@ -45,7 +45,7 @@ interface OnDeviceModel {
      */
     suspend fun generateWithThinking(
         prompt: String,
-        maxTokens: Int = 2048,
+        maxTokens: Int = 16384,
         thinkingBudget: Int = 8192
     ): ThinkingResult = ThinkingResult(thinking = "", response = generate(prompt, maxTokens))
 
@@ -66,7 +66,7 @@ interface OnDeviceModel {
     suspend fun chat(
         messages: List<ConvMessage>,
         tools: List<ToolDef> = emptyList(),
-        maxTokens: Int = 1024,
+        maxTokens: Int = 8192,
         temperature: Float = 0.7f
     ): ChatResult {
         val prompt = messages.joinToString("\n") { msg ->
