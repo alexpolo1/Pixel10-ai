@@ -88,29 +88,9 @@ class AIApiServer(
         }
 
         val id = "chatcmpl-${UUID.randomUUID().toString().take(8)}"
-        val useThinking = request.thinking_budget > 0 || request.model.contains("think")
         val hasTools = !request.tools.isNullOrEmpty()
 
-        log("Chat: ${request.messages.size} messages, tools=${request.tools?.size ?: 0}, thinking=$useThinking, stream=${request.stream}")
-
-        // ── Thinking mode ──────────────────────────────────────────────────────
-        if (useThinking) {
-            val prompt = buildFlatPrompt(request.messages)
-            val budget = if (request.thinking_budget > 0) request.thinking_budget else 8192
-            val result = runBlocking {
-                model.generateWithThinking(prompt, request.max_tokens, budget)
-            }
-            log("Thinking: ${result.thinking.take(80)}...")
-            log("Response: ${result.response.take(80)}...")
-            return jsonResponse(200, gson.toJson(ChatResponse(
-                id = id, model = request.model,
-                choices = listOf(Choice(
-                    message = Message(role = "assistant", content = result.response),
-                    thinking = result.thinking.ifEmpty { null }
-                )),
-                usage = buildUsage(result.response, result.response)
-            )))
-        }
+        log("Chat: ${request.messages.size} messages, tools=${request.tools?.size ?: 0}, stream=${request.stream}")
 
         // ── Tool calling / multi-turn chat ─────────────────────────────────────
         if (hasTools || request.messages.size > 1 || request.messages.any { it.role == "system" }) {

@@ -22,8 +22,6 @@
     <string name="btn_stop">Stop Server</string>
     <string name="port_label">Port:</string>
     <string name="port_default">8080</string>
-    <string name="api_key_label">Gemini API Key (optional, for background use)</string>
-    <string name="api_key_hint">AIza…</string>
     <string name="requests_served">Requests served: %d</string>
     <string name="request_log_label">Request Log</string>
 
