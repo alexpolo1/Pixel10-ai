@@ -5,6 +5,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.graphics.drawable.GradientDrawable
 import android.net.wifi.WifiManager
@@ -29,6 +30,7 @@ import java.util.Locale
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
+    private lateinit var prefs: SharedPreferences
     private var service: ApiServerService? = null
     private var bound = false
     private var downloading = false
@@ -68,20 +70,23 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        prefs = getSharedPreferences("pixel10_prefs", MODE_PRIVATE)
         requestNotificationPermission()
+
+        // Restore saved HF token
+        binding.etHfToken.setText(prefs.getString("hf_token", ""))
 
         binding.btnToggle.setOnClickListener {
             if (service?.isRunning == true) stopServer() else startServer()
         }
 
-        binding.btnDownloadGemma3nE4b.setOnClickListener {
-            startModelDownload(ModelSpec.GEMMA_3N_E4B_CODING)
-        }
-        binding.btnDownloadGemma3nE2b.setOnClickListener {
-            startModelDownload(ModelSpec.GEMMA_3N_E2B_CODING)
-        }
         binding.btnDownloadModel.setOnClickListener {
-            startModelDownload(ModelSpec.GEMMA_2B_GENERAL)
+            saveHfToken()
+            startModelDownload(ModelSpec.GEMMA_3_1B_Q4)
+        }
+        binding.btnDownloadGemma3Q8.setOnClickListener {
+            saveHfToken()
+            startModelDownload(ModelSpec.GEMMA_3_1B_Q8)
         }
 
         updateModelCard()
@@ -128,8 +133,18 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun saveHfToken() {
+        val token = binding.etHfToken.text.toString().trim()
+        prefs.edit().putString("hf_token", token).apply()
+    }
+
     private fun startModelDownload(spec: ModelSpec) {
         if (downloading) return
+        val token = binding.etHfToken.text.toString().trim()
+        if (token.isBlank()) {
+            binding.tvModelDownloadStatus.text = "Enter your HuggingFace token first"
+            return
+        }
         downloading = true
         setDownloadButtonsEnabled(false)
         binding.progressDownload.visibility = View.VISIBLE
@@ -137,7 +152,7 @@ class MainActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             try {
-                ModelDownloader.download(this@MainActivity, spec) { progress ->
+                ModelDownloader.download(this@MainActivity, spec, token) { progress ->
                     runOnUiThread {
                         binding.progressDownload.progress = progress.percent
                         val mb = progress.downloadedBytes / 1_048_576
@@ -164,24 +179,23 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setDownloadButtonsEnabled(enabled: Boolean) {
-        binding.btnDownloadGemma3nE4b.isEnabled = enabled
-        binding.btnDownloadGemma3nE2b.isEnabled = enabled
         binding.btnDownloadModel.isEnabled = enabled
+        binding.btnDownloadGemma3Q8.isEnabled = enabled
     }
 
     private fun updateModelCard() {
         val spec = ModelDownloader.installedSpec(this)
         if (spec != null) {
             binding.tvModelDownloadStatus.text = getString(R.string.model_downloaded, spec.displayName)
-            binding.btnDownloadGemma3nE4b.visibility = View.GONE
-            binding.btnDownloadGemma3nE2b.visibility = View.GONE
+            binding.etHfToken.visibility = View.GONE
             binding.btnDownloadModel.visibility = View.GONE
+            binding.btnDownloadGemma3Q8.visibility = View.GONE
             binding.progressDownload.visibility = View.GONE
         } else {
             binding.tvModelDownloadStatus.text = getString(R.string.model_not_downloaded)
-            binding.btnDownloadGemma3nE4b.visibility = View.VISIBLE
-            binding.btnDownloadGemma3nE2b.visibility = View.VISIBLE
+            binding.etHfToken.visibility = View.VISIBLE
             binding.btnDownloadModel.visibility = View.VISIBLE
+            binding.btnDownloadGemma3Q8.visibility = View.VISIBLE
             setDownloadButtonsEnabled(true)
             binding.progressDownload.visibility = View.GONE
         }

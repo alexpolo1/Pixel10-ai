@@ -18,11 +18,11 @@
     <string name="model_not_loaded">Model: not loaded</string>
 
     <!-- Controls -->
-    <string name="btn_download_gemma3n_e4b">⭐ Gemma 3n E4B — Best coding (~2.5 GB)</string>
-    <string name="btn_download_gemma3n_e2b">Gemma 3n E2B — Faster (~1.5 GB)</string>
-    <string name="btn_download_model">Gemma 2B — Lightest (~1.3 GB)</string>
+    <string name="hf_token_hint">HuggingFace token (huggingface.co/settings/tokens)</string>
+    <string name="btn_download_gemma3_q4">⭐ Gemma 3 1B IT Q4 — Fast (~555 MB)</string>
+    <string name="btn_download_gemma3_q8">Gemma 3 1B IT Q8 — Higher quality (~1 GB)</string>
     <string name="model_downloaded">✓ %s ready — background inference enabled</string>
-    <string name="model_not_downloaded">No local model. Download one to enable background inference.</string>
+    <string name="model_not_downloaded">No local model. Enter HuggingFace token and download.</string>
     <string name="btn_start">Start Server</string>
     <string name="btn_stop">Stop Server</string>
     <string name="port_label">Port:</string>

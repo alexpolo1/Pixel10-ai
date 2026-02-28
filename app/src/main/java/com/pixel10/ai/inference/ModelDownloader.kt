@@ -12,56 +12,40 @@ import java.net.URL
 /**
  * Downloads a MediaPipe-compatible model for background-safe inference.
  *
- * Gemini Nano (ML Kit) blocks inference when the app is backgrounded (ErrorCode 30).
- * MediaPipe with a local model file has no such restriction — it runs entirely in
- * the app process using the Tensor G5 GPU via OpenCL/Vulkan.
+ * All models are hosted on HuggingFace and require a free API token.
+ * Get one at: https://huggingface.co/settings/tokens
  *
- * Three model options (all from Google's MediaPipe CDN):
- *  - [ModelSpec.GEMMA_3N_E4B_CODING]  — best coding/reasoning, ~2.5 GB (recommended)
- *  - [ModelSpec.GEMMA_3N_E2B_CODING]  — good balance, ~1.5 GB
- *  - [ModelSpec.GEMMA_2B_GENERAL]     — lightest, ~1.3 GB
- *
- * Custom models (DeepSeek Coder, Qwen2.5-Coder, etc.) can be placed manually in
- * the app's files directory after converting with ai-edge-torch.
+ * Models use the MediaPipe `.task` format, compatible with [MediaPipeModel].
+ * Gemma 3n E4B/E2B (`.litertlm` format) requires a runtime upgrade — coming later.
  */
 object ModelDownloader {
 
     private const val TAG = "ModelDownloader"
+    private const val HF_BASE = "https://huggingface.co"
 
-    /** Available model specs that can be downloaded from Google's MediaPipe CDN. */
+    /** Available model specs downloadable from HuggingFace. */
     enum class ModelSpec(
         val displayName: String,
         val filename: String,
-        val url: String,
+        val repo: String,
         val sizeMb: Int,
         val description: String
     ) {
-        /** Recommended: best coding & reasoning quality via MoE architecture. */
-        GEMMA_3N_E4B_CODING(
-            displayName = "Gemma 3n E4B",
-            filename = "gemma-3n-E4B-it-int4.task",
-            url = "https://storage.googleapis.com/mediapipe-models/llm_inference/" +
-                  "gemma-3n-E4B-it-int4/float16/1/gemma-3n-E4B-it-int4.task",
-            sizeMb = 2500,
-            description = "Best coding & reasoning (~2.5 GB)"
+        /** Recommended: best size/quality trade-off, runs fast on Tensor G5. */
+        GEMMA_3_1B_Q4(
+            displayName = "Gemma 3 1B IT (Q4)",
+            filename = "gemma3-1b-it-int4.task",
+            repo = "litert-community/Gemma3-1B-IT",
+            sizeMb = 555,
+            description = "Best balance — fast & capable (~555 MB)"
         ),
-        /** Good balance between quality and speed. */
-        GEMMA_3N_E2B_CODING(
-            displayName = "Gemma 3n E2B",
-            filename = "gemma-3n-E2B-it-int4.task",
-            url = "https://storage.googleapis.com/mediapipe-models/llm_inference/" +
-                  "gemma-3n-E2B-it-int4/float16/1/gemma-3n-E2B-it-int4.task",
-            sizeMb = 1500,
-            description = "Good balance, faster (~1.5 GB)"
-        ),
-        /** Lightest option — general-purpose, not optimised for code. */
-        GEMMA_2B_GENERAL(
-            displayName = "Gemma 2B",
-            filename = "gemma-2b-it-gpu-int4.bin",
-            url = "https://storage.googleapis.com/mediapipe-models/llm_inference/" +
-                  "gemma-2b-it-gpu-int4/float16/1/gemma-2b-it-gpu-int4.bin",
-            sizeMb = 1300,
-            description = "Lightest, general-purpose (~1.3 GB)"
+        /** Higher quality, slower. Good for complex reasoning. */
+        GEMMA_3_1B_Q8(
+            displayName = "Gemma 3 1B IT (Q8)",
+            filename = "gemma3-1b-it-int8-web.task",
+            repo = "litert-community/Gemma3-1B-IT",
+            sizeMb = 1010,
+            description = "Higher quality, slower (~1 GB)"
         )
     }
 
@@ -82,35 +66,47 @@ object ModelDownloader {
     fun modelFile(context: Context, spec: ModelSpec): File =
         File(context.filesDir, spec.filename)
 
-    /** Legacy compat — returns the file of the installed model, or Gemma 3n E4B path as default. */
+    /** Legacy compat — returns the file of the installed model, or Q4 path as default. */
     fun modelFile(context: Context): File =
         installedSpec(context)?.let { modelFile(context, it) }
-            ?: modelFile(context, ModelSpec.GEMMA_3N_E4B_CODING)
+            ?: modelFile(context, ModelSpec.GEMMA_3_1B_Q4)
 
     /**
-     * Download [spec], reporting progress via [onProgress].
+     * Download [spec] from HuggingFace, using [hfToken] for authentication.
      * Supports resume — if a partial file exists, continues from where it left off.
+     *
+     * Get a free token at https://huggingface.co/settings/tokens
      */
     suspend fun download(
         context: Context,
-        spec: ModelSpec = ModelSpec.GEMMA_3N_E4B_CODING,
+        spec: ModelSpec = ModelSpec.GEMMA_3_1B_Q4,
+        hfToken: String,
         onProgress: (Progress) -> Unit
     ) = withContext(Dispatchers.IO) {
+        if (hfToken.isBlank()) throw OnDeviceModel.InferenceException(
+            "HuggingFace token required.\nGet a free token at huggingface.co/settings/tokens"
+        )
+
         val dest = modelFile(context, spec)
         val alreadyDownloaded = if (dest.exists()) dest.length() else 0L
+        val downloadUrl = "$HF_BASE/${spec.repo}/resolve/main/${spec.filename}"
 
-        Log.i(TAG, "Download starting ${spec.displayName} (already have $alreadyDownloaded bytes)")
+        Log.i(TAG, "Download starting ${spec.displayName} from $downloadUrl (already have $alreadyDownloaded bytes)")
 
-        val conn = URL(spec.url).openConnection() as HttpURLConnection
+        val conn = URL(downloadUrl).openConnection() as HttpURLConnection
         try {
             conn.connectTimeout = 30_000
             conn.readTimeout   = 60_000
+            conn.setRequestProperty("Authorization", "Bearer $hfToken")
             if (alreadyDownloaded > 0) {
                 conn.setRequestProperty("Range", "bytes=$alreadyDownloaded-")
             }
             conn.connect()
 
             val code = conn.responseCode
+            if (code == 401 || code == 403) throw OnDeviceModel.InferenceException(
+                "Authentication failed (HTTP $code).\nCheck your HuggingFace token."
+            )
             val resuming = code == HttpURLConnection.HTTP_PARTIAL   // 206
             if (code != HttpURLConnection.HTTP_OK && !resuming) {
                 throw OnDeviceModel.InferenceException("Download failed: HTTP $code")
