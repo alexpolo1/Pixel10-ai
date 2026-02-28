@@ -50,6 +50,7 @@ class AIApiServer(
                 method == Method.OPTIONS -> corsPreflightResponse()
                 uri == "/" || uri == "/health" -> handleHealth()
                 uri == "/v1/models" && method == Method.GET -> handleModels()
+                uri == "/v1/agent" && method == Method.GET -> handleAgentConfig()
                 uri == "/v1/chat/completions" && method == Method.POST -> handleChatCompletions(session)
                 uri == "/v1/completions" && method == Method.POST -> handleCompletions(session)
                 else -> errorResponse(404, "Not found: $uri")
@@ -79,13 +80,51 @@ class AIApiServer(
         return jsonResponse(200, gson.toJson(ModelList()))
     }
 
+    /**
+     * GET /v1/agent
+     *
+     * Returns the recommended system prompt and tool definitions for using this
+     * server as a coding agent brain. Clients (OpenClaw, Open WebUI, etc.) can
+     * fetch this once and inject it into every conversation automatically.
+     *
+     * Example:
+     *   curl http://phone:8080/v1/agent | jq .system_prompt
+     */
+    private fun handleAgentConfig(): Response {
+        val config = mapOf(
+            "system_prompt" to AgentConfig.SYSTEM_PROMPT,
+            "tools" to AgentConfig.DEFAULT_TOOLS,
+            "model" to "pixel10",
+            "notes" to mapOf(
+                "context_window" to "~32K tokens input",
+                "max_output_tokens" to 1024,
+                "tip" to "Keep each task small and focused. One file change per tool call. " +
+                         "Use patch_file for edits, write_file for new files only."
+            )
+        )
+        return jsonResponse(200, gson.toJson(config))
+    }
+
     private fun handleChatCompletions(session: IHTTPSession): Response {
         val body = readBody(session)
-        val request = gson.fromJson(body, ChatRequest::class.java)
+        val raw = gson.fromJson(body, ChatRequest::class.java)
 
-        if (request.messages.isEmpty()) {
+        if (raw.messages.isEmpty()) {
             return errorResponse(400, "messages array is required and must not be empty")
         }
+
+        // Auto-inject agent system prompt if the conversation has no system message.
+        // Auto-inject default tools if the request provides none.
+        // This makes the server zero-config as a coding agent for any OpenAI-compatible client.
+        val messages = if (raw.messages.none { it.role == "system" }) {
+            listOf(Message(role = "system", content = AgentConfig.SYSTEM_PROMPT)) + raw.messages
+        } else {
+            raw.messages
+        }
+        val request = raw.copy(
+            messages = messages,
+            tools = raw.tools.takeUnless { it.isNullOrEmpty() } ?: AgentConfig.DEFAULT_TOOLS
+        )
 
         val id = "chatcmpl-${UUID.randomUUID().toString().take(8)}"
         val hasTools = !request.tools.isNullOrEmpty()
