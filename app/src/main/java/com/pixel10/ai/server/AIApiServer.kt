@@ -81,28 +81,54 @@ class AIApiServer(
             return errorResponse(400, "messages array is required and must not be empty")
         }
 
-        // Build a prompt from the chat messages
         val prompt = buildChatPrompt(request.messages)
+        val useThinking = request.thinking_budget > 0 || request.model.contains("think")
+        val budget = if (request.thinking_budget > 0) request.thinking_budget else 8192
 
-        log("Chat prompt (${request.messages.size} messages, ${prompt.length} chars)")
+        log("Chat prompt (${request.messages.size} messages, ${prompt.length} chars, thinking=$useThinking)")
 
-        if (request.stream) {
+        if (request.stream && !useThinking) {
             return handleStreamingResponse(prompt, request)
         }
 
-        // Synchronous generation
+        val id = "chatcmpl-${UUID.randomUUID().toString().take(8)}"
+
+        if (useThinking) {
+            val result = runBlocking {
+                model.generateWithThinking(prompt, request.max_tokens, budget)
+            }
+            log("Thinking: ${result.thinking.take(80)}...")
+            log("Response: ${result.response.take(80)}...")
+
+            val chatResponse = ChatResponse(
+                id = id,
+                model = request.model,
+                choices = listOf(
+                    Choice(
+                        message = Message(role = "assistant", content = result.response),
+                        thinking = result.thinking.ifEmpty { null }
+                    )
+                ),
+                usage = Usage(
+                    prompt_tokens = estimateTokens(prompt),
+                    completion_tokens = estimateTokens(result.response),
+                    total_tokens = estimateTokens(prompt) + estimateTokens(result.response)
+                )
+            )
+            return jsonResponse(200, gson.toJson(chatResponse))
+        }
+
+        // Fast (non-streaming) generation
         val responseText = runBlocking {
             model.generate(prompt, request.max_tokens, request.temperature)
         }
-
         log("Response: ${responseText.take(80)}...")
 
         val chatResponse = ChatResponse(
-            id = "chatcmpl-${UUID.randomUUID().toString().take(8)}",
+            id = id,
+            model = request.model,
             choices = listOf(
-                Choice(
-                    message = Message(role = "assistant", content = responseText)
-                )
+                Choice(message = Message(role = "assistant", content = responseText))
             ),
             usage = Usage(
                 prompt_tokens = estimateTokens(prompt),
@@ -110,7 +136,6 @@ class AIApiServer(
                 total_tokens = estimateTokens(prompt) + estimateTokens(responseText)
             )
         )
-
         return jsonResponse(200, gson.toJson(chatResponse))
     }
 

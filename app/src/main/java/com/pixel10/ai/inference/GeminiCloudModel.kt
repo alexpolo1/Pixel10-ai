@@ -104,8 +104,89 @@ class GeminiCloudModel(private val apiKey: String) : OnDeviceModel {
         }
     }
 
+    override suspend fun generateWithThinking(
+        prompt: String,
+        maxTokens: Int,
+        thinkingBudget: Int
+    ): OnDeviceModel.ThinkingResult = withContext(Dispatchers.IO) {
+        val url = URL("$THINKING_URL?key=$apiKey")
+        val connection = url.openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "POST"
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.doOutput = true
+            connection.connectTimeout = 30_000
+            connection.readTimeout = 120_000
+
+            val body = buildThinkingRequestBody(prompt, maxTokens, thinkingBudget)
+            connection.outputStream.use { it.write(body.toByteArray()) }
+
+            val responseCode = connection.responseCode
+            if (responseCode != HttpURLConnection.HTTP_OK) {
+                val error = connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
+                throw OnDeviceModel.InferenceException("Gemini thinking API error $responseCode: $error")
+            }
+
+            val responseText = connection.inputStream.bufferedReader().readText()
+            parseThinkingResponse(responseText)
+        } finally {
+            connection.disconnect()
+        }
+    }
+
     override fun close() {
         // No resources to clean up
+    }
+
+    private fun buildThinkingRequestBody(prompt: String, maxTokens: Int, thinkingBudget: Int): String {
+        return JSONObject().apply {
+            put("contents", JSONArray().apply {
+                put(JSONObject().apply {
+                    put("role", "user")
+                    put("parts", JSONArray().apply {
+                        put(JSONObject().apply { put("text", prompt) })
+                    })
+                })
+            })
+            put("generationConfig", JSONObject().apply {
+                put("maxOutputTokens", maxTokens)
+                put("thinkingConfig", JSONObject().apply {
+                    put("thinkingBudget", thinkingBudget)
+                })
+            })
+        }.toString()
+    }
+
+    private fun parseThinkingResponse(json: String): OnDeviceModel.ThinkingResult {
+        return try {
+            val parts = JSONObject(json)
+                .getJSONArray("candidates")
+                .getJSONObject(0)
+                .getJSONObject("content")
+                .getJSONArray("parts")
+
+            val thinkingBuilder = StringBuilder()
+            val responseBuilder = StringBuilder()
+
+            for (i in 0 until parts.length()) {
+                val part = parts.getJSONObject(i)
+                val text = part.optString("text", "")
+                if (part.optBoolean("thought", false)) {
+                    thinkingBuilder.append(text)
+                } else {
+                    responseBuilder.append(text)
+                }
+            }
+
+            OnDeviceModel.ThinkingResult(
+                thinking = thinkingBuilder.toString(),
+                response = responseBuilder.toString()
+            )
+        } catch (e: Exception) {
+            throw OnDeviceModel.InferenceException(
+                "Failed to parse Gemini thinking response: ${e.message}", e
+            )
+        }
     }
 
     private fun buildRequestBody(prompt: String, maxTokens: Int, temperature: Float): String {
@@ -157,9 +238,15 @@ class GeminiCloudModel(private val apiKey: String) : OnDeviceModel {
 
     companion object {
         private const val TAG = "GeminiCloudModel"
-        private const val BASE_URL =
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash"
-        private const val STREAMING_URL =
-            "$BASE_URL:streamGenerateContent?alt=sse"
+        private const val API_ROOT = "https://generativelanguage.googleapis.com/v1beta/models"
+
+        // Fast model — low latency, no reasoning trace
+        private const val FAST_MODEL = "gemini-2.0-flash"
+        private const val BASE_URL = "$API_ROOT/$FAST_MODEL"
+        private const val STREAMING_URL = "$BASE_URL:streamGenerateContent?alt=sse"
+
+        // Thinking model — step-by-step reasoning before answering
+        private const val THINKING_MODEL = "gemini-2.5-flash-preview-04-17"
+        private const val THINKING_URL = "$API_ROOT/$THINKING_MODEL:generateContent"
     }
 }
