@@ -34,6 +34,7 @@ class ApiServerService : Service() {
 
     var onStatusChanged: ((ServerState) -> Unit)? = null
     var onLog: ((String) -> Unit)? = null
+    var onActiveRequest: ((Boolean) -> Unit)? = null
 
     val isRunning: Boolean get() = server != null
     val requestCount: Long get() = server?.requestCount?.get() ?: 0
@@ -70,8 +71,15 @@ class ApiServerService : Service() {
 
                 // Start the HTTP server
                 notifyLog("Starting API server on port $port...")
-                val apiServer = AIApiServer(port, model!!)
+                val prefs = getSharedPreferences("pixel10_prefs", MODE_PRIVATE)
+                val serverConfig = ServerConfig(
+                    defaultTemperature = prefs.getFloat("temperature", 0.7f),
+                    defaultMaxTokens = prefs.getInt("max_tokens", 1024),
+                    autoSystemPrompt = prefs.getBoolean("auto_system_prompt", true)
+                )
+                val apiServer = AIApiServer(port, model!!, serverConfig)
                 apiServer.onRequestLogged = { msg -> notifyLog(msg) }
+                apiServer.onActiveRequest = { active -> onActiveRequest?.invoke(active) }
                 apiServer.start()
                 server = apiServer
 
