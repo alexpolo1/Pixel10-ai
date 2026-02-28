@@ -2,17 +2,16 @@ package com.pixel10.ai.inference
 
 import android.content.Context
 import android.util.Log
+import com.google.mlkit.genai.prompt.DownloadStatus
+import com.google.mlkit.genai.prompt.FeatureStatus
+import com.google.mlkit.genai.prompt.Generation
 import com.google.mlkit.genai.prompt.GenerativeModel
-import com.google.mlkit.genai.prompt.type.Content
 import com.google.mlkit.genai.prompt.type.TextPart
-import com.google.mlkit.genai.prompt.type.content
-import com.google.mlkit.genai.prompt.type.generationConfig
+import com.google.mlkit.genai.prompt.type.generateContentRequest
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.fold
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 
 /**
  * Gemini Nano backend via ML Kit Prompt API.
@@ -22,10 +21,9 @@ import kotlin.coroutines.resumeWithException
  * no manual download or file management needed.
  *
  * Key advantages:
- *  - Hardware-accelerated on Tensor G5 TPU (2.6x faster than G4)
- *  - 32,000 token context window on Pixel 10
- *  - ~3 GB model always resident in RAM for instant inference
+ *  - Hardware-accelerated on Tensor G5 TPU
  *  - Fully offline, private — data never leaves the device
+ *  - System-managed model, no manual downloads
  */
 class GeminiNanoModel private constructor(
     private val generativeModel: GenerativeModel
@@ -43,9 +41,12 @@ class GeminiNanoModel private constructor(
         temperature: Float
     ): String = withContext(Dispatchers.Default) {
         try {
-            val request = content { text(prompt) }
+            val request = generateContentRequest(TextPart(prompt)) {
+                this.temperature = temperature
+                this.topK = 40
+            }
             val response = generativeModel.generateContent(request)
-            response.text ?: ""
+            response.candidates.firstOrNull()?.text ?: ""
         } catch (e: Exception) {
             Log.e(TAG, "Gemini Nano generation error", e)
             throw OnDeviceModel.InferenceException("Gemini Nano generation failed: ${e.message}", e)
@@ -57,12 +58,11 @@ class GeminiNanoModel private constructor(
         onToken: (String) -> Unit
     ): String = withContext(Dispatchers.Default) {
         try {
-            val request = content { text(prompt) }
-            generativeModel.generateContentStream(request)
-                .fold("") { acc, response ->
-                    val chunk = response.text ?: ""
-                    if (chunk.isNotEmpty()) onToken(chunk)
-                    acc + chunk
+            generativeModel.generateContentStream(prompt)
+                .fold("") { acc, chunk ->
+                    val text = chunk.candidates.firstOrNull()?.text ?: ""
+                    if (text.isNotEmpty()) onToken(text)
+                    acc + text
                 }
         } catch (e: Exception) {
             Log.e(TAG, "Gemini Nano streaming error", e)
@@ -72,53 +72,60 @@ class GeminiNanoModel private constructor(
 
     override fun close() {
         isReady = false
-        generativeModel.close()
+        // GenerativeModel from Generation.getClient() is system-managed
     }
 
     companion object {
         private const val TAG = "GeminiNanoModel"
 
         suspend fun create(context: Context): GeminiNanoModel = withContext(Dispatchers.IO) {
-            // Check if Gemini Nano is available on this device
-            val model = GenerativeModel.newBuilder()
-                .setContext(context)
-                .build()
+            val model = Generation.getClient()
 
-            // Verify feature is available — will throw if not supported
-            suspendCancellableCoroutine { continuation ->
-                model.isAvailable()
-                    .addOnSuccessListener { available ->
-                        if (available) {
-                            continuation.resume(Unit)
-                        } else {
-                            continuation.resumeWithException(
-                                OnDeviceModel.InferenceException(
-                                    "Gemini Nano is not available on this device"
-                                )
-                            )
+            // Check if Gemini Nano is available on this device
+            val status = model.checkStatus()
+            when (status) {
+                FeatureStatus.UNAVAILABLE -> {
+                    throw OnDeviceModel.InferenceException(
+                        "Gemini Nano is not available on this device"
+                    )
+                }
+                FeatureStatus.DOWNLOADABLE -> {
+                    Log.i(TAG, "Downloading Gemini Nano model...")
+                    model.download().collect { downloadStatus ->
+                        when (downloadStatus) {
+                            is DownloadStatus.DownloadStarted ->
+                                Log.i(TAG, "Model download started")
+                            is DownloadStatus.DownloadProgress ->
+                                Log.i(TAG, "Download in progress...")
+                            DownloadStatus.DownloadCompleted ->
+                                Log.i(TAG, "Model download completed")
+                            is DownloadStatus.DownloadFailed ->
+                                throw OnDeviceModel.InferenceException("Model download failed")
                         }
                     }
-                    .addOnFailureListener { e ->
-                        continuation.resumeWithException(
-                            OnDeviceModel.InferenceException(
-                                "Failed to check Gemini Nano availability: ${e.message}", e
-                            )
-                        )
+                }
+                FeatureStatus.DOWNLOADING -> {
+                    Log.i(TAG, "Model already downloading, waiting...")
+                    model.download().collect { downloadStatus ->
+                        if (downloadStatus == DownloadStatus.DownloadCompleted) {
+                            Log.i(TAG, "Download completed")
+                        }
                     }
+                }
+                FeatureStatus.AVAILABLE -> {
+                    Log.i(TAG, "Gemini Nano is available")
+                }
             }
 
-            // Trigger model download if needed
-            suspendCancellableCoroutine { continuation ->
-                model.downloadModel()
-                    .addOnSuccessListener { continuation.resume(Unit) }
-                    .addOnFailureListener { e ->
-                        Log.w(TAG, "Model download issue (may already be available): ${e.message}")
-                        // Don't fail — model might already be cached
-                        continuation.resume(Unit)
-                    }
+            // Warm up for lower first-inference latency
+            try {
+                model.warmup()
+                Log.i(TAG, "Model warmup complete")
+            } catch (e: Exception) {
+                Log.w(TAG, "Warmup failed (non-fatal): ${e.message}")
             }
 
-            Log.i(TAG, "Gemini Nano model ready via ML Kit Prompt API")
+            Log.i(TAG, "Gemini Nano ready via ML Kit Prompt API")
             GeminiNanoModel(model)
         }
     }
