@@ -105,6 +105,54 @@
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 
+    <!-- Model Download Card -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/cardModel"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        app:cardBackgroundColor="@color/surface_variant"
+        app:cardCornerRadius="16dp"
+        app:cardElevation="0dp"
+        app:strokeWidth="0dp"
+        app:layout_constraintTop_toBottomOf="@id/cardStatus"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:id="@+id/tvModelDownloadStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/log_text"
+                android:textSize="13sp" />
+
+            <ProgressBar
+                android:id="@+id/progressDownload"
+                style="@android:style/Widget.ProgressBar.Horizontal"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:max="100"
+                android:visibility="gone" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnDownloadModel"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/btn_download_model"
+                android:textSize="13sp"
+                app:cornerRadius="8dp" />
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+
     <!-- Port Config -->
     <LinearLayout
         android:id="@+id/layoutPort"
@@ -113,7 +161,7 @@
         android:orientation="horizontal"
         android:gravity="center_vertical"
         android:layout_marginTop="16dp"
-        app:layout_constraintTop_toBottomOf="@id/cardStatus"
+        app:layout_constraintTop_toBottomOf="@id/cardModel"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 

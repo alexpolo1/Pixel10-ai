@@ -15,9 +15,12 @@ import android.view.View
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import com.pixel10.ai.R
 import com.pixel10.ai.databinding.ActivityMainBinding
+import com.pixel10.ai.inference.ModelDownloader
 import com.pixel10.ai.server.ApiServerService
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -27,6 +30,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private var service: ApiServerService? = null
     private var bound = false
+    private var downloading = false
 
     private val logBuffer = StringBuilder()
 
@@ -66,20 +70,27 @@ class MainActivity : AppCompatActivity() {
         requestNotificationPermission()
 
         binding.btnToggle.setOnClickListener {
-            if (service?.isRunning == true) {
-                stopServer()
-            } else {
-                startServer()
-            }
+            if (service?.isRunning == true) stopServer() else startServer()
         }
 
+        binding.btnDownloadModel.setOnClickListener {
+            startModelDownload()
+        }
+
+        updateModelCard()
         updateStatus(ApiServerService.ServerState.STOPPED)
         appendLog("Pixel10 AI Server ready")
         appendLog("Device: ${Build.MANUFACTURER} ${Build.MODEL}")
         appendLog("SoC: ${Build.SOC_MODEL}")
         appendLog("Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
         appendLog("")
-        appendLog("Tap 'Start Server' to begin serving AI inference")
+        if (ModelDownloader.isModelPresent(this)) {
+            appendLog("Model ready — server works in background")
+        } else {
+            appendLog("No local model found")
+            appendLog("Tap 'Download Model' to enable background inference")
+            appendLog("(Without it, Gemini Nano only works in foreground)")
+        }
     }
 
     override fun onStart() {
@@ -110,16 +121,64 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun startModelDownload() {
+        if (downloading) return
+        downloading = true
+        binding.btnDownloadModel.isEnabled = false
+        binding.btnDownloadModel.text = "Downloading…"
+        binding.progressDownload.visibility = View.VISIBLE
+        binding.tvModelDownloadStatus.text = "Starting download…"
+
+        lifecycleScope.launch {
+            try {
+                ModelDownloader.download(this@MainActivity) { progress ->
+                    runOnUiThread {
+                        binding.progressDownload.progress = progress.percent
+                        val mb = progress.downloadedBytes / 1_048_576
+                        val total = progress.totalBytes / 1_048_576
+                        binding.tvModelDownloadStatus.text = "Downloading… ${mb}MB / ${total}MB (${progress.percent}%)"
+                    }
+                }
+                runOnUiThread {
+                    downloading = false
+                    updateModelCard()
+                    appendLog("Model downloaded — background inference enabled")
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    downloading = false
+                    binding.btnDownloadModel.isEnabled = true
+                    binding.btnDownloadModel.text = getString(R.string.btn_download_model)
+                    binding.progressDownload.visibility = View.GONE
+                    binding.tvModelDownloadStatus.text = "Download failed: ${e.message}"
+                    appendLog("Download error: ${e.message}")
+                }
+            }
+        }
+    }
+
+    private fun updateModelCard() {
+        val present = ModelDownloader.isModelPresent(this)
+        if (present) {
+            binding.tvModelDownloadStatus.text = getString(R.string.model_downloaded)
+            binding.btnDownloadModel.visibility = View.GONE
+            binding.progressDownload.visibility = View.GONE
+        } else {
+            binding.tvModelDownloadStatus.text = getString(R.string.model_not_downloaded)
+            binding.btnDownloadModel.visibility = View.VISIBLE
+            binding.btnDownloadModel.isEnabled = true
+            binding.btnDownloadModel.text = getString(R.string.btn_download_model)
+            binding.progressDownload.visibility = View.GONE
+        }
+    }
+
     private fun startServer() {
         val port = binding.etPort.text.toString().toIntOrNull() ?: 8080
-
         val intent = Intent(this, ApiServerService::class.java).apply {
             action = ApiServerService.ACTION_START
             putExtra(ApiServerService.EXTRA_PORT, port)
         }
         startForegroundService(intent)
-
-        // Bind if not already bound
         if (!bound) {
             bindService(
                 Intent(this, ApiServerService::class.java),
@@ -127,7 +186,6 @@ class MainActivity : AppCompatActivity() {
                 Context.BIND_AUTO_CREATE
             )
         }
-
         updateStatus(ApiServerService.ServerState.LOADING_MODEL)
     }
 
@@ -137,6 +195,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateStatus(state: ApiServerService.ServerState) {
+        val canEdit = state == ApiServerService.ServerState.STOPPED ||
+                      state == ApiServerService.ServerState.ERROR
+        binding.etPort.isEnabled = canEdit
+
         when (state) {
             ApiServerService.ServerState.STOPPED -> {
                 binding.tvServerStatus.text = getString(R.string.server_status_stopped)
@@ -145,14 +207,12 @@ class MainActivity : AppCompatActivity() {
                 binding.tvModelStatus.text = "Model: not loaded"
                 binding.btnToggle.text = getString(R.string.btn_start)
                 binding.btnToggle.isEnabled = true
-                binding.etPort.isEnabled = true
             }
             ApiServerService.ServerState.LOADING_MODEL -> {
                 binding.tvServerStatus.text = getString(R.string.server_status_starting)
                 (binding.viewStatusDot.background as? GradientDrawable)?.setColor(getColor(R.color.primary))
                 binding.tvModelStatus.text = getString(R.string.model_loading)
                 binding.btnToggle.isEnabled = false
-                binding.etPort.isEnabled = false
             }
             ApiServerService.ServerState.RUNNING -> {
                 val port = binding.etPort.text.toString()
@@ -163,7 +223,6 @@ class MainActivity : AppCompatActivity() {
                 binding.tvModelStatus.text = getString(R.string.model_ready)
                 binding.btnToggle.text = getString(R.string.btn_stop)
                 binding.btnToggle.isEnabled = true
-                binding.etPort.isEnabled = false
             }
             ApiServerService.ServerState.ERROR -> {
                 binding.tvServerStatus.text = getString(R.string.server_status_error)
@@ -171,7 +230,6 @@ class MainActivity : AppCompatActivity() {
                 binding.tvModelStatus.text = getString(R.string.model_error)
                 binding.btnToggle.text = getString(R.string.btn_start)
                 binding.btnToggle.isEnabled = true
-                binding.etPort.isEnabled = true
             }
         }
     }
@@ -180,16 +238,8 @@ class MainActivity : AppCompatActivity() {
         val timestamp = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
         logBuffer.append("[$timestamp] $message\n")
         binding.tvLog.text = logBuffer.toString()
-
-        // Auto-scroll to bottom
-        binding.scrollLog.post {
-            binding.scrollLog.fullScroll(View.FOCUS_DOWN)
-        }
-
-        // Update request count
-        service?.let {
-            binding.tvRequestCount.text = "Requests served: ${it.requestCount}"
-        }
+        binding.scrollLog.post { binding.scrollLog.fullScroll(View.FOCUS_DOWN) }
+        service?.let { binding.tvRequestCount.text = "Requests served: ${it.requestCount}" }
     }
 
     @Suppress("DEPRECATION")
@@ -202,7 +252,6 @@ class MainActivity : AppCompatActivity() {
             }
         } catch (_: Exception) {}
 
-        // Fallback: iterate network interfaces
         try {
             val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
             while (interfaces.hasMoreElements()) {

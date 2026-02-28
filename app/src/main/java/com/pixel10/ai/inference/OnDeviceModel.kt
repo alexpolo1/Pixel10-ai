@@ -102,38 +102,43 @@ interface OnDeviceModel {
 
         /**
          * Create the best available on-device model.
-         * Tries Gemini Nano (Tensor G5 TPU) first, falls back to MediaPipe.
+         *
+         * Priority order:
+         *  1. MediaPipe (local model file) — runs in background, uses Tensor G5 GPU.
+         *     This is the preferred backend: no foreground restriction, no AICore dep.
+         *  2. Gemini Nano (ML Kit) — foreground only (ErrorCode 30 in background).
+         *     Used as fallback when no MediaPipe model file is present.
+         *
+         * Tap "Download Model" in the app UI to get the MediaPipe model automatically.
          */
         suspend fun create(context: Context): OnDeviceModel = withContext(Dispatchers.IO) {
-            // Try Gemini Nano via ML Kit Prompt API
+            // MediaPipe first — background-safe, GPU-accelerated via Tensor G5
             try {
-                Log.i(TAG, "Attempting Gemini Nano via ML Kit Prompt API...")
+                Log.i(TAG, "Attempting MediaPipe LLM with local model...")
+                val mediapipe = MediaPipeModel.create(context)
+                Log.i(TAG, "MediaPipe model ready: ${mediapipe.backendName}")
+                return@withContext mediapipe
+            } catch (e: Exception) {
+                Log.w(TAG, "MediaPipe not available: ${e.message}")
+            }
+
+            // Gemini Nano fallback — only works when app is in foreground
+            try {
+                Log.i(TAG, "Attempting Gemini Nano via ML Kit (foreground only)...")
                 val nano = GeminiNanoModel.create(context)
-                Log.i(TAG, "Gemini Nano ready!")
+                Log.i(TAG, "Gemini Nano ready (foreground only)")
                 return@withContext nano
             } catch (e: Exception) {
                 Log.w(TAG, "Gemini Nano not available: ${e.message}")
             }
 
-            // Fall back to MediaPipe with a local model file
-            try {
-                Log.i(TAG, "Attempting MediaPipe LLM with local model...")
-                val mediapipe = MediaPipeModel.create(context)
-                Log.i(TAG, "MediaPipe model ready!")
-                return@withContext mediapipe
-            } catch (e: Exception) {
-                Log.w(TAG, "MediaPipe model not available: ${e.message}")
-            }
-
             throw InferenceException(
-                "No on-device AI model available.\n\n" +
-                "Option 1: Use a Pixel device with Gemini Nano support " +
-                "(Pixel 10/9/8 series)\n\n" +
-                "Option 2: Place a MediaPipe-compatible model (.bin or .task) in:\n" +
+                "No model loaded yet.\n\n" +
+                "Tap 'Download Model' in the app to download Gemma 2B (~1.3 GB).\n" +
+                "Once downloaded the server works fully in the background.\n\n" +
+                "Or place a compatible model file in:\n" +
                 "  ${context.filesDir.absolutePath}/\n" +
-                "  Supported: gemma-3n-E2B.task, gemma-2b-it-gpu-int4.bin, etc.\n\n" +
-                "Download models from:\n" +
-                "  https://ai.google.dev/edge/mediapipe/solutions/genai/llm_inference/android"
+                "  Supported: gemma-2b-it-gpu-int4.bin, gemma-3n-E2B.task, etc."
             )
         }
     }
