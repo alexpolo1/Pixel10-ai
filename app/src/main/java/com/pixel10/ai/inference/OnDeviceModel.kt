@@ -112,9 +112,19 @@ interface OnDeviceModel {
          * Tap "Download Model" in the app UI to get the MediaPipe model automatically.
          */
         suspend fun create(context: Context): OnDeviceModel = withContext(Dispatchers.IO) {
-            // MediaPipe first — background-safe, GPU-accelerated via Tensor G5
+            // LiteRT-LM first — Gemma 3n .litertlm format, GPU-accelerated, background-safe
             try {
-                Log.i(TAG, "Attempting MediaPipe LLM with local model...")
+                Log.i(TAG, "Attempting LiteRT-LM with local .litertlm model...")
+                val litert = LiteRTModel.create(context)
+                Log.i(TAG, "LiteRT-LM model ready: ${litert.backendName}")
+                return@withContext litert
+            } catch (e: Exception) {
+                Log.w(TAG, "LiteRT-LM not available: ${e.message}")
+            }
+
+            // MediaPipe fallback — .task/.bin format, background-safe
+            try {
+                Log.i(TAG, "Attempting MediaPipe LLM with local .task model...")
                 val mediapipe = MediaPipeModel.create(context)
                 Log.i(TAG, "MediaPipe model ready: ${mediapipe.backendName}")
                 return@withContext mediapipe
@@ -122,7 +132,7 @@ interface OnDeviceModel {
                 Log.w(TAG, "MediaPipe not available: ${e.message}")
             }
 
-            // Gemini Nano fallback — only works when app is in foreground
+            // Gemini Nano last resort — foreground only
             try {
                 Log.i(TAG, "Attempting Gemini Nano via ML Kit (foreground only)...")
                 val nano = GeminiNanoModel.create(context)
@@ -134,11 +144,10 @@ interface OnDeviceModel {
 
             throw InferenceException(
                 "No model loaded yet.\n\n" +
-                "Tap 'Download Model' in the app to download Gemma 2B (~1.3 GB).\n" +
+                "Tap 'Download Model' in the app to download Gemma 3n E4B.\n" +
                 "Once downloaded the server works fully in the background.\n\n" +
-                "Or place a compatible model file in:\n" +
-                "  ${context.filesDir.absolutePath}/\n" +
-                "  Supported: gemma-2b-it-gpu-int4.bin, gemma-3n-E2B.task, etc."
+                "Or place a .litertlm file in:\n" +
+                "  ${context.filesDir.absolutePath}/"
             )
         }
     }

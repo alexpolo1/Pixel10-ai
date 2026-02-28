@@ -82,11 +82,11 @@ class MainActivity : AppCompatActivity() {
 
         binding.btnDownloadModel.setOnClickListener {
             saveHfToken()
-            startModelDownload(ModelSpec.GEMMA_3_1B_Q4)
+            startModelDownload(ModelSpec.GEMMA_3N_E4B)
         }
         binding.btnDownloadGemma3Q8.setOnClickListener {
             saveHfToken()
-            startModelDownload(ModelSpec.GEMMA_3_1B_Q8)
+            startModelDownload(ModelSpec.GEMMA_3N_E4B_WEB)
         }
 
         updateModelCard()
