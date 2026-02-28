@@ -31,8 +31,11 @@ jobs:
           restore-keys: gradle-
 
       - name: Decode signing keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/pixel10.keystore"
+          printf '%s' "$KEYSTORE_B64" | base64 --ignore-garbage -d > "$RUNNER_TEMP/pixel10.keystore"
+          echo "Keystore decoded: $(wc -c < $RUNNER_TEMP/pixel10.keystore) bytes"
 
       - name: Build signed debug APK
         env:
