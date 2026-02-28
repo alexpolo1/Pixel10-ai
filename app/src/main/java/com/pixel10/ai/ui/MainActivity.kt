@@ -19,6 +19,7 @@ import androidx.lifecycle.lifecycleScope
 import com.pixel10.ai.R
 import com.pixel10.ai.databinding.ActivityMainBinding
 import com.pixel10.ai.inference.ModelDownloader
+import com.pixel10.ai.inference.ModelDownloader.ModelSpec
 import com.pixel10.ai.server.ApiServerService
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -73,8 +74,14 @@ class MainActivity : AppCompatActivity() {
             if (service?.isRunning == true) stopServer() else startServer()
         }
 
+        binding.btnDownloadGemma3nE4b.setOnClickListener {
+            startModelDownload(ModelSpec.GEMMA_3N_E4B_CODING)
+        }
+        binding.btnDownloadGemma3nE2b.setOnClickListener {
+            startModelDownload(ModelSpec.GEMMA_3N_E2B_CODING)
+        }
         binding.btnDownloadModel.setOnClickListener {
-            startModelDownload()
+            startModelDownload(ModelSpec.GEMMA_2B_GENERAL)
         }
 
         updateModelCard()
@@ -121,34 +128,33 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun startModelDownload() {
+    private fun startModelDownload(spec: ModelSpec) {
         if (downloading) return
         downloading = true
-        binding.btnDownloadModel.isEnabled = false
-        binding.btnDownloadModel.text = "Downloading…"
+        setDownloadButtonsEnabled(false)
         binding.progressDownload.visibility = View.VISIBLE
-        binding.tvModelDownloadStatus.text = "Starting download…"
+        binding.tvModelDownloadStatus.text = "Starting download: ${spec.displayName}…"
 
         lifecycleScope.launch {
             try {
-                ModelDownloader.download(this@MainActivity) { progress ->
+                ModelDownloader.download(this@MainActivity, spec) { progress ->
                     runOnUiThread {
                         binding.progressDownload.progress = progress.percent
                         val mb = progress.downloadedBytes / 1_048_576
                         val total = progress.totalBytes / 1_048_576
-                        binding.tvModelDownloadStatus.text = "Downloading… ${mb}MB / ${total}MB (${progress.percent}%)"
+                        binding.tvModelDownloadStatus.text =
+                            "${spec.displayName}: ${mb}MB / ${total}MB (${progress.percent}%)"
                     }
                 }
                 runOnUiThread {
                     downloading = false
                     updateModelCard()
-                    appendLog("Model downloaded — background inference enabled")
+                    appendLog("${spec.displayName} downloaded — background inference enabled")
                 }
             } catch (e: Exception) {
                 runOnUiThread {
                     downloading = false
-                    binding.btnDownloadModel.isEnabled = true
-                    binding.btnDownloadModel.text = getString(R.string.btn_download_model)
+                    setDownloadButtonsEnabled(true)
                     binding.progressDownload.visibility = View.GONE
                     binding.tvModelDownloadStatus.text = "Download failed: ${e.message}"
                     appendLog("Download error: ${e.message}")
@@ -157,17 +163,26 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun setDownloadButtonsEnabled(enabled: Boolean) {
+        binding.btnDownloadGemma3nE4b.isEnabled = enabled
+        binding.btnDownloadGemma3nE2b.isEnabled = enabled
+        binding.btnDownloadModel.isEnabled = enabled
+    }
+
     private fun updateModelCard() {
-        val present = ModelDownloader.isModelPresent(this)
-        if (present) {
-            binding.tvModelDownloadStatus.text = getString(R.string.model_downloaded)
+        val spec = ModelDownloader.installedSpec(this)
+        if (spec != null) {
+            binding.tvModelDownloadStatus.text = getString(R.string.model_downloaded, spec.displayName)
+            binding.btnDownloadGemma3nE4b.visibility = View.GONE
+            binding.btnDownloadGemma3nE2b.visibility = View.GONE
             binding.btnDownloadModel.visibility = View.GONE
             binding.progressDownload.visibility = View.GONE
         } else {
             binding.tvModelDownloadStatus.text = getString(R.string.model_not_downloaded)
+            binding.btnDownloadGemma3nE4b.visibility = View.VISIBLE
+            binding.btnDownloadGemma3nE2b.visibility = View.VISIBLE
             binding.btnDownloadModel.visibility = View.VISIBLE
-            binding.btnDownloadModel.isEnabled = true
-            binding.btnDownloadModel.text = getString(R.string.btn_download_model)
+            setDownloadButtonsEnabled(true)
             binding.progressDownload.visibility = View.GONE
         }
     }
