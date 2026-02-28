@@ -28,6 +28,11 @@
         android:theme="@style/Theme.Pixel10AI">
 
         <activity
+            android:name=".ui.ChatActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
             android:name=".ui.MainActivity"
             android:exported="true"
             android:launchMode="singleTop">

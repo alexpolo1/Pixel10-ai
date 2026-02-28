@@ -104,6 +104,10 @@ class MainActivity : AppCompatActivity() {
             if (service?.isRunning == true) stopServer() else startServer()
         }
 
+        binding.btnChat.setOnClickListener {
+            startActivity(Intent(this, ChatActivity::class.java))
+        }
+
         binding.btnDownloadModel.setOnClickListener {
             saveHfToken()
             startModelDownload(ModelSpec.GEMMA_3N_E4B)
@@ -272,6 +276,7 @@ class MainActivity : AppCompatActivity() {
                 binding.tvModelStatus.text = "Model: not loaded"
                 binding.btnToggle.text = getString(R.string.btn_start)
                 binding.btnToggle.isEnabled = true
+                binding.btnChat.isEnabled = false
             }
             ApiServerService.ServerState.LOADING_MODEL -> {
                 binding.tvServerStatus.text = getString(R.string.server_status_starting)
@@ -288,6 +293,7 @@ class MainActivity : AppCompatActivity() {
                 binding.tvModelStatus.text = getString(R.string.model_ready)
                 binding.btnToggle.text = getString(R.string.btn_stop)
                 binding.btnToggle.isEnabled = true
+                binding.btnChat.isEnabled = true
             }
             ApiServerService.ServerState.ERROR -> {
                 binding.tvServerStatus.text = getString(R.string.server_status_error)
