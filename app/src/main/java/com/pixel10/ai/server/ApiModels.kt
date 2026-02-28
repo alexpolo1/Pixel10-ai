@@ -18,7 +18,8 @@ data class ChatRequest(
     val model: String = "pixel10-fast",
     val messages: List<Message> = emptyList(),
     val prompt: String? = null,
-    val max_tokens: Int = 1024,
+    /** Output token limit. Defaults to 8192 — enough for full functions/files. */
+    val max_tokens: Int = 8192,
     val temperature: Float = 0.7f,
     val stream: Boolean = false,
     /** Thinking token budget. 0 = fast (no thinking). >0 = thinking mode. */
@@ -121,7 +122,11 @@ data class ModelInfo(
     @SerializedName("object")
     val objectType: String = "model",
     val owned_by: String = "local-device",
-    val description: String = ""
+    val description: String = "",
+    /** Input context window in tokens. */
+    val context_length: Int = 1_000_000,
+    /** Maximum output tokens. */
+    val max_output_tokens: Int = 8192
 )
 
 data class ModelList(
@@ -130,11 +135,15 @@ data class ModelList(
     val data: List<ModelInfo> = listOf(
         ModelInfo(
             id = "pixel10-fast",
-            description = "Fast inference via Gemini 2.0 Flash — low latency, tool calling supported"
+            description = "Gemini 2.0 Flash — 1M context, tool calling, streaming. Best for agent tasks.",
+            context_length = 1_000_000,
+            max_output_tokens = 8192
         ),
         ModelInfo(
             id = "pixel10-thinking",
-            description = "Thinking mode via Gemini 2.5 Flash — step-by-step reasoning before answering"
+            description = "Gemini 2.5 Flash — 1M context, extended reasoning before answering.",
+            context_length = 1_000_000,
+            max_output_tokens = 16384
         )
     )
 )
