@@ -1,0 +1,180 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: gradle-
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+
+  test:
+    name: API Integration Tests
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable KVM (hardware-accelerated emulator)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: gradle-
+
+      - name: Download APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: app-debug
+          path: apk/
+
+      - name: Install Android SDK components
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
+            "platform-tools" \
+            "emulator" \
+            "system-images;android-31;google_apis;x86_64"
+
+      - name: Create AVD
+        run: |
+          echo no | $ANDROID_HOME/cmdline-tools/latest/bin/avdmanager create avd \
+            --name pixel10_test \
+            --package "system-images;android-31;google_apis;x86_64" \
+            --device "pixel_6"
+
+      - name: Start emulator
+        run: |
+          $ANDROID_HOME/emulator/emulator \
+            -avd pixel10_test \
+            -no-window -no-audio -no-snapshot \
+            -gpu swiftshader_indirect &
+          $ANDROID_HOME/platform-tools/adb wait-for-device
+
+      - name: Wait for emulator boot
+        run: |
+          timeout 300 bash -c '
+            until $ANDROID_HOME/platform-tools/adb shell \
+              getprop sys.boot_completed 2>/dev/null | grep -q "1"; do
+              sleep 3
+            done
+          '
+          $ANDROID_HOME/platform-tools/adb shell input keyevent 82
+
+      - name: Install APK
+        run: $ANDROID_HOME/platform-tools/adb install apk/app-debug.apk
+
+      - name: Write Gemini API key to SharedPreferences
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          $ANDROID_HOME/platform-tools/adb shell run-as com.pixel10.ai sh -c \
+            'mkdir -p /data/data/com.pixel10.ai/shared_prefs && cat > /data/data/com.pixel10.ai/shared_prefs/pixel10_prefs.xml' << EOF
+          <?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+          <map>
+              <string name="gemini_api_key">${GEMINI_API_KEY}</string>
+          </map>
+          EOF
+
+      - name: Start API server
+        run: |
+          $ANDROID_HOME/platform-tools/adb shell am startservice \
+            -n com.pixel10.ai/.server.ApiServerService \
+            -a com.pixel10.ai.START_SERVER \
+            --ei port 8080
+          sleep 5
+
+      - name: Forward device port
+        run: $ANDROID_HOME/platform-tools/adb forward tcp:8080 tcp:8080
+
+      - name: Wait for server to be ready
+        run: |
+          timeout 30 bash -c '
+            until curl -sf http://localhost:8080/health > /dev/null 2>&1; do
+              sleep 2
+            done
+          '
+
+      - name: Test /health
+        run: |
+          RESPONSE=$(curl -sf http://localhost:8080/health)
+          echo "Health response: $RESPONSE"
+          echo "$RESPONSE" | grep -q '"status"' || \
+            (echo "FAIL: /health did not return expected JSON" && exit 1)
+
+      - name: Test /v1/models
+        run: |
+          RESPONSE=$(curl -sf http://localhost:8080/v1/models)
+          echo "Models response: $RESPONSE"
+          echo "$RESPONSE" | grep -q '"data"' || \
+            (echo "FAIL: /v1/models did not return expected JSON" && exit 1)
+
+      - name: Test /v1/chat/completions (non-streaming)
+        run: |
+          RESPONSE=$(curl -sf http://localhost:8080/v1/chat/completions \
+            -H "Content-Type: application/json" \
+            -d '{"model":"gemini","messages":[{"role":"user","content":"Reply with one word: hello"}]}')
+          echo "Chat response: $RESPONSE"
+          echo "$RESPONSE" | grep -q '"choices"' || \
+            (echo "FAIL: /v1/chat/completions did not return choices" && exit 1)
+
+      - name: Test /v1/chat/completions (streaming)
+        run: |
+          # Collect SSE chunks with a 20-second timeout
+          CHUNKS=$(curl -sf --max-time 20 http://localhost:8080/v1/chat/completions \
+            -H "Content-Type: application/json" \
+            -d '{"model":"gemini","stream":true,"messages":[{"role":"user","content":"Say hi"}]}')
+          echo "Streaming chunks received:"
+          echo "$CHUNKS"
+          echo "$CHUNKS" | grep -q "data:" || \
+            (echo "FAIL: streaming returned no SSE chunks" && exit 1)
+
+      - name: Print logcat on failure
+        if: failure()
+        run: $ANDROID_HOME/platform-tools/adb logcat -d -s Pixel10AI ApiServerService GeminiCloudModel
