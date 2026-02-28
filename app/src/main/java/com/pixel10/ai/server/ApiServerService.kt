@@ -3,7 +3,6 @@ package com.pixel10.ai.server
 import android.app.Notification
 import android.app.PendingIntent
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.os.Binder
 import android.os.IBinder
@@ -65,14 +64,8 @@ class ApiServerService : Service() {
 
         scope.launch {
             try {
-                // Load the AI model — prefer cloud if an API key is configured
-                val apiKey = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                    .getString(PREF_API_KEY, "") ?: ""
-                notifyLog("Loading AI model...")
-                if (apiKey.isNotBlank()) {
-                    notifyLog("API key configured — using cloud backend")
-                }
-                model = OnDeviceModel.create(applicationContext, apiKey)
+                notifyLog("Loading on-device AI model...")
+                model = OnDeviceModel.create(applicationContext)
                 notifyLog("Model ready: ${model!!.backendName}")
 
                 // Start the HTTP server
@@ -167,7 +160,5 @@ class ApiServerService : Service() {
         const val EXTRA_PORT = "port"
         const val DEFAULT_PORT = 8080
         private const val NOTIFICATION_ID = 1
-        const val PREFS_NAME = "pixel10_prefs"
-        const val PREF_API_KEY = "gemini_api_key"
     }
 }

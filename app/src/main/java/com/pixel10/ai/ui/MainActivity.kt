@@ -18,8 +18,6 @@ import androidx.core.content.ContextCompat
 import com.pixel10.ai.R
 import com.pixel10.ai.databinding.ActivityMainBinding
 import com.pixel10.ai.server.ApiServerService
-import com.pixel10.ai.server.ApiServerService.Companion.PREF_API_KEY
-import com.pixel10.ai.server.ApiServerService.Companion.PREFS_NAME
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -66,10 +64,6 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         requestNotificationPermission()
-
-        // Restore saved API key
-        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        binding.etApiKey.setText(prefs.getString(PREF_API_KEY, ""))
 
         binding.btnToggle.setOnClickListener {
             if (service?.isRunning == true) {
@@ -119,13 +113,6 @@ class MainActivity : AppCompatActivity() {
     private fun startServer() {
         val port = binding.etPort.text.toString().toIntOrNull() ?: 8080
 
-        // Persist API key before starting the service
-        val apiKey = binding.etApiKey.text.toString().trim()
-        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .putString(PREF_API_KEY, apiKey)
-            .apply()
-
         val intent = Intent(this, ApiServerService::class.java).apply {
             action = ApiServerService.ACTION_START
             putExtra(ApiServerService.EXTRA_PORT, port)
@@ -159,7 +146,6 @@ class MainActivity : AppCompatActivity() {
                 binding.btnToggle.text = getString(R.string.btn_start)
                 binding.btnToggle.isEnabled = true
                 binding.etPort.isEnabled = true
-                binding.etApiKey.isEnabled = true
             }
             ApiServerService.ServerState.LOADING_MODEL -> {
                 binding.tvServerStatus.text = getString(R.string.server_status_starting)
@@ -167,7 +153,6 @@ class MainActivity : AppCompatActivity() {
                 binding.tvModelStatus.text = getString(R.string.model_loading)
                 binding.btnToggle.isEnabled = false
                 binding.etPort.isEnabled = false
-                binding.etApiKey.isEnabled = false
             }
             ApiServerService.ServerState.RUNNING -> {
                 val port = binding.etPort.text.toString()
@@ -179,7 +164,6 @@ class MainActivity : AppCompatActivity() {
                 binding.btnToggle.text = getString(R.string.btn_stop)
                 binding.btnToggle.isEnabled = true
                 binding.etPort.isEnabled = false
-                binding.etApiKey.isEnabled = false
             }
             ApiServerService.ServerState.ERROR -> {
                 binding.tvServerStatus.text = getString(R.string.server_status_error)
@@ -188,7 +172,6 @@ class MainActivity : AppCompatActivity() {
                 binding.btnToggle.text = getString(R.string.btn_start)
                 binding.btnToggle.isEnabled = true
                 binding.etPort.isEnabled = true
-                binding.etApiKey.isEnabled = true
             }
         }
     }

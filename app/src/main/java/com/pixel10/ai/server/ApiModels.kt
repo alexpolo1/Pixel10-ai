@@ -15,15 +15,12 @@ import com.google.gson.annotations.SerializedName
 // ── Requests ──────────────────────────────────────────────────────────────────
 
 data class ChatRequest(
-    val model: String = "pixel10-fast",
+    val model: String = "pixel10",
     val messages: List<Message> = emptyList(),
     val prompt: String? = null,
-    /** Output token limit. Defaults to 8192 — enough for full functions/files. */
     val max_tokens: Int = 8192,
     val temperature: Float = 0.7f,
     val stream: Boolean = false,
-    /** Thinking token budget. 0 = fast (no thinking). >0 = thinking mode. */
-    val thinking_budget: Int = 0,
     /** Tool/function definitions available to the model. */
     val tools: List<Tool>? = null,
     /** "auto" | "none" | "required" — defaults to "auto" when tools are provided. */
@@ -73,7 +70,7 @@ data class ChatResponse(
     @SerializedName("object")
     val objectType: String = "chat.completion",
     val created: Long = System.currentTimeMillis() / 1000,
-    val model: String = "pixel10-fast",
+    val model: String = "pixel10",
     val choices: List<Choice>,
     val usage: Usage
 )
@@ -82,9 +79,7 @@ data class Choice(
     val index: Int = 0,
     val message: Message,
     /** "stop" | "tool_calls" | "length" */
-    val finish_reason: String = "stop",
-    /** Non-standard: reasoning trace, present only in thinking mode. */
-    val thinking: String? = null
+    val finish_reason: String = "stop"
 )
 
 data class Usage(
@@ -134,16 +129,10 @@ data class ModelList(
     val objectType: String = "list",
     val data: List<ModelInfo> = listOf(
         ModelInfo(
-            id = "pixel10-fast",
-            description = "Gemini 2.0 Flash — 1M context, tool calling, streaming. Best for agent tasks.",
-            context_length = 1_000_000,
-            max_output_tokens = 8192
-        ),
-        ModelInfo(
-            id = "pixel10-thinking",
-            description = "Gemini 2.5 Flash — 1M context, extended reasoning before answering.",
-            context_length = 1_000_000,
-            max_output_tokens = 16384
+            id = "pixel10",
+            description = "Gemini Nano on Tensor G5 — fully on-device, private, tool calling supported.",
+            context_length = 4096,
+            max_output_tokens = 1024
         )
     )
 )
