@@ -23,7 +23,7 @@ object ModelDownloader {
     private const val TAG = "ModelDownloader"
     private const val HF_BASE = "https://huggingface.co"
 
-    /** Available model specs downloadable from HuggingFace. */
+    /** Available model specs downloadable from HuggingFace (requires token + license acceptance). */
     enum class ModelSpec(
         val displayName: String,
         val filename: String,
@@ -31,21 +31,27 @@ object ModelDownloader {
         val sizeMb: Int,
         val description: String
     ) {
-        /** Recommended: best size/quality trade-off, runs fast on Tensor G5. */
-        GEMMA_3_1B_Q4(
-            displayName = "Gemma 3 1B IT (Q4)",
-            filename = "gemma3-1b-it-int4.task",
-            repo = "litert-community/Gemma3-1B-IT",
-            sizeMb = 555,
-            description = "Best balance — fast & capable (~555 MB)"
+        /**
+         * Gemma 3n E4B INT4 — best quality, Tensor G5 optimised, background-safe.
+         * Accept license at: https://huggingface.co/google/gemma-3n-E4B-it-litert-lm
+         */
+        GEMMA_3N_E4B(
+            displayName = "Gemma 3n E4B",
+            filename = "gemma-3n-E4B-it-int4.litertlm",
+            repo = "google/gemma-3n-E4B-it-litert-lm",
+            sizeMb = 4920,
+            description = "Best quality — Tensor G5 optimised (~4.9 GB)"
         ),
-        /** Higher quality, slower. Good for complex reasoning. */
-        GEMMA_3_1B_Q8(
-            displayName = "Gemma 3 1B IT (Q8)",
-            filename = "gemma3-1b-it-int8-web.task",
-            repo = "litert-community/Gemma3-1B-IT",
-            sizeMb = 1010,
-            description = "Higher quality, slower (~1 GB)"
+        /**
+         * Gemma 3n E4B Web INT4 — smaller variant, slightly lower quality.
+         * Same license as above.
+         */
+        GEMMA_3N_E4B_WEB(
+            displayName = "Gemma 3n E4B (Web)",
+            filename = "gemma-3n-E4B-it-int4-Web.litertlm",
+            repo = "google/gemma-3n-E4B-it-litert-lm",
+            sizeMb = 4280,
+            description = "Slightly smaller variant (~4.3 GB)"
         )
     }
 
@@ -66,10 +72,10 @@ object ModelDownloader {
     fun modelFile(context: Context, spec: ModelSpec): File =
         File(context.filesDir, spec.filename)
 
-    /** Legacy compat — returns the file of the installed model, or Q4 path as default. */
+    /** Returns the file of the installed model, or E4B path as default. */
     fun modelFile(context: Context): File =
         installedSpec(context)?.let { modelFile(context, it) }
-            ?: modelFile(context, ModelSpec.GEMMA_3_1B_Q4)
+            ?: modelFile(context, ModelSpec.GEMMA_3N_E4B)
 
     /**
      * Download [spec] from HuggingFace, using [hfToken] for authentication.
@@ -79,7 +85,7 @@ object ModelDownloader {
      */
     suspend fun download(
         context: Context,
-        spec: ModelSpec = ModelSpec.GEMMA_3_1B_Q4,
+        spec: ModelSpec = ModelSpec.GEMMA_3N_E4B,
         hfToken: String,
         onProgress: (Progress) -> Unit
     ) = withContext(Dispatchers.IO) {

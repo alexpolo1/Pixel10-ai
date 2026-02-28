@@ -19,8 +19,8 @@
 
     <!-- Controls -->
     <string name="hf_token_hint">HuggingFace token (huggingface.co/settings/tokens)</string>
-    <string name="btn_download_gemma3_q4">⭐ Gemma 3 1B IT Q4 — Fast (~555 MB)</string>
-    <string name="btn_download_gemma3_q8">Gemma 3 1B IT Q8 — Higher quality (~1 GB)</string>
+    <string name="btn_download_gemma3_q4">⭐ Gemma 3n E4B — Best quality (~4.9 GB)</string>
+    <string name="btn_download_gemma3_q8">Gemma 3n E4B Web — Smaller (~4.3 GB)</string>
     <string name="model_downloaded">✓ %s ready — background inference enabled</string>
     <string name="model_not_downloaded">No local model. Enter HuggingFace token and download.</string>
     <string name="btn_start">Start Server</string>

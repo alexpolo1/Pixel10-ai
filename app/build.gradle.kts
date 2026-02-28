@@ -51,8 +51,11 @@ dependencies {
     // ML Kit GenAI — Gemini Nano via AICore (recommended for Pixel 10)
     implementation("com.google.mlkit:genai-prompt:1.0.0-beta1")
 
-    // MediaPipe LLM Inference — for custom models (Gemma, etc.)
+    // MediaPipe LLM Inference — legacy fallback for .task/.bin models
     implementation("com.google.mediapipe:tasks-genai:0.10.24")
+
+    // LiteRT-LM — primary backend for Gemma 3n .litertlm models
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.9.0-alpha05")
 
     // Embedded HTTP server
     implementation("org.nanohttpd:nanohttpd:2.3.1")
