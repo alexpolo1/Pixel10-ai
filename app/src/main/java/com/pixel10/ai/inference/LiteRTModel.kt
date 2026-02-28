@@ -7,6 +7,8 @@ import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -29,42 +31,49 @@ class LiteRTModel private constructor(
     override var isReady: Boolean = true
         private set
 
+    // LiteRT Engine is not thread-safe — serialize all inference calls
+    private val mutex = Mutex()
+
     override suspend fun generate(
         prompt: String,
         maxTokens: Int,
         temperature: Float
-    ): String = withContext(Dispatchers.Default) {
-        val conversation = engine.createConversation()
-        try {
-            conversation.sendMessage(prompt).toString()
-        } catch (e: Exception) {
-            Log.e(TAG, "LiteRT inference error", e)
-            throw OnDeviceModel.InferenceException("Generation failed: ${e.message}", e)
-        } finally {
-            conversation.close()
+    ): String = mutex.withLock {
+        withContext(Dispatchers.Default) {
+            val conversation = engine.createConversation()
+            try {
+                conversation.sendMessage(prompt).toString()
+            } catch (e: Exception) {
+                Log.e(TAG, "LiteRT inference error", e)
+                throw OnDeviceModel.InferenceException("Generation failed: ${e.message}", e)
+            } finally {
+                conversation.close()
+            }
         }
     }
 
     override suspend fun generateStreaming(
         prompt: String,
         onToken: (String) -> Unit
-    ): String = withContext(Dispatchers.Default) {
-        val conversation = engine.createConversation()
-        val sb = StringBuilder()
-        try {
-            conversation.sendMessageAsync(prompt)
-                .catch { e ->
-                    throw OnDeviceModel.InferenceException("Streaming failed: ${e.message}", e)
-                }
-                .collect { message ->
-                    val token = message.toString()
-                    sb.append(token)
-                    onToken(token)
-                }
-        } finally {
-            conversation.close()
+    ): String = mutex.withLock {
+        withContext(Dispatchers.Default) {
+            val conversation = engine.createConversation()
+            val sb = StringBuilder()
+            try {
+                conversation.sendMessageAsync(prompt)
+                    .catch { e ->
+                        throw OnDeviceModel.InferenceException("Streaming failed: ${e.message}", e)
+                    }
+                    .collect { message ->
+                        val token = message.toString()
+                        sb.append(token)
+                        onToken(token)
+                    }
+            } finally {
+                conversation.close()
+            }
+            sb.toString()
         }
-        sb.toString()
     }
 
     override fun close() {

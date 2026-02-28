@@ -13,6 +13,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.view.View
+import android.widget.SeekBar
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -53,6 +54,16 @@ class MainActivity : AppCompatActivity() {
             service?.onLog = { message ->
                 runOnUiThread { appendLog(message) }
             }
+            service?.onActiveRequest = { active ->
+                runOnUiThread {
+                    if (active) {
+                        binding.tvActiveRequest.text = "⚡ Processing request…"
+                        binding.tvActiveRequest.visibility = View.VISIBLE
+                    } else {
+                        binding.tvActiveRequest.visibility = View.GONE
+                    }
+                }
+            }
 
             if (service?.isRunning == true) {
                 updateStatus(ApiServerService.ServerState.RUNNING)
@@ -73,8 +84,21 @@ class MainActivity : AppCompatActivity() {
         prefs = getSharedPreferences("pixel10_prefs", MODE_PRIVATE)
         requestNotificationPermission()
 
-        // Restore saved HF token
+        // Restore saved settings
         binding.etHfToken.setText(prefs.getString("hf_token", ""))
+        val savedTemp = (prefs.getFloat("temperature", 0.7f) * 100).toInt()
+        binding.seekTemperature.progress = savedTemp
+        binding.tvTemperatureValue.text = "%.1f".format(savedTemp / 100f)
+        binding.etMaxTokens.setText(prefs.getInt("max_tokens", 1024).toString())
+        binding.switchSystemPrompt.isChecked = prefs.getBoolean("auto_system_prompt", true)
+
+        binding.seekTemperature.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
+                binding.tvTemperatureValue.text = "%.1f".format(progress / 100f)
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar) {}
+        })
 
         binding.btnToggle.setOnClickListener {
             if (service?.isRunning == true) stopServer() else startServer()
@@ -201,7 +225,16 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun saveSettings() {
+        prefs.edit()
+            .putFloat("temperature", binding.seekTemperature.progress / 100f)
+            .putInt("max_tokens", binding.etMaxTokens.text.toString().toIntOrNull() ?: 1024)
+            .putBoolean("auto_system_prompt", binding.switchSystemPrompt.isChecked)
+            .apply()
+    }
+
     private fun startServer() {
+        saveSettings()
         val port = binding.etPort.text.toString().toIntOrNull() ?: 8080
         val intent = Intent(this, ApiServerService::class.java).apply {
             action = ApiServerService.ACTION_START
@@ -227,6 +260,9 @@ class MainActivity : AppCompatActivity() {
         val canEdit = state == ApiServerService.ServerState.STOPPED ||
                       state == ApiServerService.ServerState.ERROR
         binding.etPort.isEnabled = canEdit
+        binding.seekTemperature.isEnabled = canEdit
+        binding.etMaxTokens.isEnabled = canEdit
+        binding.switchSystemPrompt.isEnabled = canEdit
 
         when (state) {
             ApiServerService.ServerState.STOPPED -> {

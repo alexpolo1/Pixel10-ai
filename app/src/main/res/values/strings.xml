@@ -25,7 +25,10 @@
     <string name="model_not_downloaded">No local model. Enter HuggingFace token and download.</string>
     <string name="btn_start">Start Server</string>
     <string name="btn_stop">Stop Server</string>
-    <string name="port_label">Port:</string>
+    <string name="port_label">Port</string>
+    <string name="setting_temperature">Temperature</string>
+    <string name="setting_max_tokens">Max tokens</string>
+    <string name="setting_auto_system_prompt">Agent system prompt</string>
     <string name="port_default">8080</string>
     <string name="requests_served">Requests served: %d</string>
     <string name="request_log_label">Request Log</string>

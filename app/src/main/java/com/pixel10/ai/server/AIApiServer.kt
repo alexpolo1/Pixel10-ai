@@ -27,9 +27,16 @@ import java.util.concurrent.atomic.AtomicLong
  *     -H "Content-Type: application/json" \
  *     -d '{"messages":[{"role":"user","content":"Hello!"}]}'
  */
+data class ServerConfig(
+    val defaultTemperature: Float = 0.7f,
+    val defaultMaxTokens: Int = 1024,
+    val autoSystemPrompt: Boolean = true
+)
+
 class AIApiServer(
     port: Int,
-    private val model: OnDeviceModel
+    private val model: OnDeviceModel,
+    private val config: ServerConfig = ServerConfig()
 ) : NanoHTTPD(port) {
 
     private val gson = Gson()
@@ -37,6 +44,7 @@ class AIApiServer(
     val requestCount = AtomicLong(0)
 
     var onRequestLogged: ((String) -> Unit)? = null
+    var onActiveRequest: ((Boolean) -> Unit)? = null
 
     override fun serve(session: IHTTPSession): Response {
         val method = session.method
@@ -113,31 +121,48 @@ class AIApiServer(
             return errorResponse(400, "messages array is required and must not be empty")
         }
 
-        // Auto-inject agent system prompt if the conversation has no system message.
-        // Auto-inject default tools if the request provides none.
-        // This makes the server zero-config as a coding agent for any OpenAI-compatible client.
-        val messages = if (raw.messages.none { it.role == "system" }) {
+        // Auto-inject agent system prompt if enabled and no system message present
+        val messages = if (config.autoSystemPrompt && raw.messages.none { it.role == "system" }) {
             listOf(Message(role = "system", content = AgentConfig.SYSTEM_PROMPT)) + raw.messages
         } else {
             raw.messages
         }
         val request = raw.copy(
             messages = messages,
-            tools = raw.tools.takeUnless { it.isNullOrEmpty() } ?: AgentConfig.DEFAULT_TOOLS
+            tools = raw.tools.takeUnless { it.isNullOrEmpty() }
+                ?: if (config.autoSystemPrompt) AgentConfig.DEFAULT_TOOLS else null,
+            temperature = if (raw.temperature == 0.7f) config.defaultTemperature else raw.temperature,
+            max_tokens = if (raw.max_tokens == 8192) config.defaultMaxTokens else raw.max_tokens
         )
 
         val id = "chatcmpl-${UUID.randomUUID().toString().take(8)}"
         val hasTools = !request.tools.isNullOrEmpty()
 
-        log("Chat: ${request.messages.size} messages, tools=${request.tools?.size ?: 0}, stream=${request.stream}")
+        log("Chat: ${request.messages.size} messages, tools=${request.tools?.size ?: 0}, stream=${request.stream}, temp=${request.temperature}")
+
+        // ── Streaming — always uses flat prompt + generateStreaming ────────────
+        if (request.stream) {
+            val prompt = buildFlatPrompt(request.messages)
+            onActiveRequest?.invoke(true)
+            return try {
+                handleStreamingResponse(id, prompt, request)
+            } finally {
+                onActiveRequest?.invoke(false)
+            }
+        }
 
         // ── Tool calling / multi-turn chat ─────────────────────────────────────
         if (hasTools || request.messages.size > 1 || request.messages.any { it.role == "system" }) {
             val convMessages = request.messages.map { it.toConvMessage() }
             val toolDefs = request.tools?.map { it.toToolDef() } ?: emptyList()
 
-            val result = runBlocking {
-                model.chat(convMessages, toolDefs, request.max_tokens, request.temperature)
+            onActiveRequest?.invoke(true)
+            val result = try {
+                runBlocking {
+                    model.chat(convMessages, toolDefs, request.max_tokens, request.temperature)
+                }
+            } finally {
+                onActiveRequest?.invoke(false)
             }
 
             if (result.toolCalls != null) {
