@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
+import android.graphics.drawable.GradientDrawable
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
@@ -139,7 +140,7 @@ class MainActivity : AppCompatActivity() {
         when (state) {
             ApiServerService.ServerState.STOPPED -> {
                 binding.tvServerStatus.text = getString(R.string.server_status_stopped)
-                binding.viewStatusDot.setBackgroundColor(getColor(R.color.status_stopped))
+                (binding.viewStatusDot.background as? GradientDrawable)?.setColor(getColor(R.color.status_stopped))
                 binding.tvServerUrl.text = "http://—"
                 binding.tvModelStatus.text = "Model: not loaded"
                 binding.btnToggle.text = getString(R.string.btn_start)
@@ -148,7 +149,7 @@ class MainActivity : AppCompatActivity() {
             }
             ApiServerService.ServerState.LOADING_MODEL -> {
                 binding.tvServerStatus.text = getString(R.string.server_status_starting)
-                binding.viewStatusDot.setBackgroundColor(getColor(R.color.primary))
+                (binding.viewStatusDot.background as? GradientDrawable)?.setColor(getColor(R.color.primary))
                 binding.tvModelStatus.text = getString(R.string.model_loading)
                 binding.btnToggle.isEnabled = false
                 binding.etPort.isEnabled = false
@@ -157,7 +158,7 @@ class MainActivity : AppCompatActivity() {
                 val port = binding.etPort.text.toString()
                 val ip = getLocalIpAddress()
                 binding.tvServerStatus.text = getString(R.string.server_status_running)
-                binding.viewStatusDot.setBackgroundColor(getColor(R.color.status_running))
+                (binding.viewStatusDot.background as? GradientDrawable)?.setColor(getColor(R.color.status_running))
                 binding.tvServerUrl.text = "http://$ip:$port"
                 binding.tvModelStatus.text = getString(R.string.model_ready)
                 binding.btnToggle.text = getString(R.string.btn_stop)
@@ -166,7 +167,7 @@ class MainActivity : AppCompatActivity() {
             }
             ApiServerService.ServerState.ERROR -> {
                 binding.tvServerStatus.text = getString(R.string.server_status_error)
-                binding.viewStatusDot.setBackgroundColor(getColor(R.color.error))
+                (binding.viewStatusDot.background as? GradientDrawable)?.setColor(getColor(R.color.error))
                 binding.tvModelStatus.text = getString(R.string.model_error)
                 binding.btnToggle.text = getString(R.string.btn_start)
                 binding.btnToggle.isEnabled = true

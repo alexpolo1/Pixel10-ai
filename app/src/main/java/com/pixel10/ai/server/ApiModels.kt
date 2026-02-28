@@ -1,5 +1,7 @@
 package com.pixel10.ai.server
 
+import com.google.gson.annotations.SerializedName
+
 /**
  * Request/response models for the AI API.
  * Follows an OpenAI-compatible schema for easy integration.
@@ -20,6 +22,9 @@ data class Message(
 
 data class ChatResponse(
     val id: String,
+    @SerializedName("object")
+    val objectType: String = "chat.completion",
+    val created: Long = System.currentTimeMillis() / 1000,
     val model: String = "pixel10-on-device",
     val choices: List<Choice>,
     val usage: Usage
@@ -39,6 +44,9 @@ data class Usage(
 
 data class StreamChunk(
     val id: String,
+    @SerializedName("object")
+    val objectType: String = "chat.completion.chunk",
+    val created: Long = System.currentTimeMillis() / 1000,
     val model: String = "pixel10-on-device",
     val choices: List<StreamChoice>
 )
@@ -56,12 +64,15 @@ data class Delta(
 
 data class ModelInfo(
     val id: String = "pixel10-on-device",
-    val object_type: String = "model",
+    @SerializedName("object")
+    val objectType: String = "model",
     val owned_by: String = "local-device",
     val description: String = "On-device AI model running on Pixel 10 Tensor G5 chip"
 )
 
 data class ModelList(
+    @SerializedName("object")
+    val objectType: String = "list",
     val data: List<ModelInfo> = listOf(ModelInfo())
 )
 

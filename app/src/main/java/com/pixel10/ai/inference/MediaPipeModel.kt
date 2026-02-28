@@ -4,11 +4,8 @@ import android.content.Context
 import android.util.Log
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import java.io.File
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 
 /**
  * MediaPipe LLM Inference backend for custom open-weight models.
@@ -52,23 +49,18 @@ class MediaPipeModel private constructor(
         prompt: String,
         onToken: (String) -> Unit
     ): String = withContext(Dispatchers.Default) {
-        suspendCancellableCoroutine { continuation ->
-            val fullResponse = StringBuilder()
-            try {
-                llmInference.generateResponseAsync(prompt).addResultListener { partialResult, done ->
-                    val chunk = partialResult ?: ""
-                    fullResponse.append(chunk)
-                    onToken(chunk)
-                    if (done) {
-                        continuation.resume(fullResponse.toString())
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Streaming error", e)
-                continuation.resumeWithException(
-                    OnDeviceModel.InferenceException("Streaming failed: ${e.message}", e)
-                )
-            }
+        // MediaPipe's streaming API (generateResponseAsync) requires the result
+        // listener to be set at LlmInference build time via setResultListener().
+        // Since our architecture needs a dynamic callback per request, we use
+        // synchronous generation and emit the result as a single chunk.
+        // For true token-by-token streaming, the Gemini Nano backend is preferred.
+        try {
+            val result = llmInference.generateResponse(prompt)
+            onToken(result)
+            result
+        } catch (e: Exception) {
+            Log.e(TAG, "MediaPipe generation error", e)
+            throw OnDeviceModel.InferenceException("Generation failed: ${e.message}", e)
         }
     }
 
@@ -120,7 +112,6 @@ class MediaPipeModel private constructor(
         }
 
         private fun findModelPath(context: Context): String? {
-            // Search standard locations
             val searchDirs = listOfNotNull(
                 context.filesDir,
                 File(context.filesDir, "models"),
@@ -137,7 +128,6 @@ class MediaPipeModel private constructor(
                         return file.absolutePath
                     }
                 }
-                // Also check for any .task or .bin file
                 dir.listFiles()?.firstOrNull {
                     it.extension in listOf("task", "bin", "tflite")
                 }?.let { return it.absolutePath }
