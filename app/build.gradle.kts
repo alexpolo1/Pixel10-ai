@@ -16,16 +16,10 @@ android {
     }
 
     val keystoreFile = rootProject.file("pixel10.keystore")
-    val keystoreEnv = System.getenv("KEYSTORE_PATH")
 
     signingConfigs {
         create("release") {
-            if (keystoreEnv != null) {
-                storeFile = file(keystoreEnv)
-                storePassword = System.getenv("KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("KEY_ALIAS")
-                keyPassword = System.getenv("KEY_PASSWORD")
-            } else if (keystoreFile.exists()) {
+            if (keystoreFile.exists()) {
                 storeFile = keystoreFile
                 storePassword = "pixel10ai"
                 keyAlias = "pixel10"

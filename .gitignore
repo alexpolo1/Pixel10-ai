@@ -15,4 +15,3 @@ local.properties
 *.bin
 *.task
 *.tflite
-pixel10.keystore
