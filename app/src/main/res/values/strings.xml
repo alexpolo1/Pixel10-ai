@@ -18,6 +18,9 @@
     <string name="model_not_loaded">Model: not loaded</string>
 
     <!-- Controls -->
+    <string name="btn_download_model">Download Model (~1.3 GB)</string>
+    <string name="model_downloaded">✓ Gemma 2B ready — background inference enabled</string>
+    <string name="model_not_downloaded">No local model. Download to enable background inference.</string>
     <string name="btn_start">Start Server</string>
     <string name="btn_stop">Stop Server</string>
     <string name="port_label">Port:</string>
