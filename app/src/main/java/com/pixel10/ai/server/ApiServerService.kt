@@ -38,6 +38,7 @@ class ApiServerService : Service() {
 
     val isRunning: Boolean get() = server != null
     val requestCount: Long get() = server?.requestCount?.get() ?: 0
+    val currentModel: OnDeviceModel? get() = model
 
     inner class LocalBinder : Binder() {
         val service: ApiServerService get() = this@ApiServerService
