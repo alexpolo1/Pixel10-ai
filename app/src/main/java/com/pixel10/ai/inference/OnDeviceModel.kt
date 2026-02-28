@@ -36,7 +36,27 @@ interface OnDeviceModel {
         onToken: (String) -> Unit
     ): String
 
+    /**
+     * Generate with extended thinking. Returns a [ThinkingResult] containing
+     * the model's reasoning trace and its final answer separately.
+     *
+     * The default implementation delegates to [generate] with an empty thinking trace,
+     * so backends that don't support thinking still work transparently.
+     */
+    suspend fun generateWithThinking(
+        prompt: String,
+        maxTokens: Int = 2048,
+        thinkingBudget: Int = 8192
+    ): ThinkingResult = ThinkingResult(thinking = "", response = generate(prompt, maxTokens))
+
     fun close()
+
+    data class ThinkingResult(
+        /** The model's internal reasoning trace (may be empty for non-thinking backends). */
+        val thinking: String,
+        /** The final answer shown to the user. */
+        val response: String
+    )
 
     companion object {
         private const val TAG = "OnDeviceModel"

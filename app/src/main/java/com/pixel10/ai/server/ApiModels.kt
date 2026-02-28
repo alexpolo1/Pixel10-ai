@@ -8,11 +8,14 @@ import com.google.gson.annotations.SerializedName
  */
 
 data class ChatRequest(
+    val model: String = "pixel10-fast",
     val messages: List<Message> = emptyList(),
     val prompt: String? = null,
     val max_tokens: Int = 1024,
     val temperature: Float = 0.7f,
-    val stream: Boolean = false
+    val stream: Boolean = false,
+    /** Thinking token budget. 0 = fast (no thinking). >0 = thinking mode. */
+    val thinking_budget: Int = 0
 )
 
 data class Message(
@@ -25,7 +28,7 @@ data class ChatResponse(
     @SerializedName("object")
     val objectType: String = "chat.completion",
     val created: Long = System.currentTimeMillis() / 1000,
-    val model: String = "pixel10-on-device",
+    val model: String = "pixel10-fast",
     val choices: List<Choice>,
     val usage: Usage
 )
@@ -33,7 +36,9 @@ data class ChatResponse(
 data class Choice(
     val index: Int = 0,
     val message: Message,
-    val finish_reason: String = "stop"
+    val finish_reason: String = "stop",
+    /** Non-standard: reasoning/thinking trace, present only when thinking mode is used. */
+    val thinking: String? = null
 )
 
 data class Usage(
@@ -63,17 +68,26 @@ data class Delta(
 )
 
 data class ModelInfo(
-    val id: String = "pixel10-on-device",
+    val id: String,
     @SerializedName("object")
     val objectType: String = "model",
     val owned_by: String = "local-device",
-    val description: String = "On-device AI model running on Pixel 10 Tensor G5 chip"
+    val description: String = ""
 )
 
 data class ModelList(
     @SerializedName("object")
     val objectType: String = "list",
-    val data: List<ModelInfo> = listOf(ModelInfo())
+    val data: List<ModelInfo> = listOf(
+        ModelInfo(
+            id = "pixel10-fast",
+            description = "Fast inference — no reasoning trace"
+        ),
+        ModelInfo(
+            id = "pixel10-thinking",
+            description = "Thinking mode — includes step-by-step reasoning before answering"
+        )
+    )
 )
 
 data class ErrorResponse(
