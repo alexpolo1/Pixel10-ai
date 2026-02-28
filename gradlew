@@ -112,13 +112,7 @@ if ! "$cygwin" && ! "$darwin" && ! "$nonstop" ; then
     esac
 fi
 
-# Collect all arguments for the java command, stracks://github.com/gradle/gradle/issues/25036)
-# shellcheck disable=SC2153
-case $( dirname -- "$0" ) in
-  '' ) set -- org.gradle.wrapper.GradleWrapperMain "$@" ;;
-  *)  set -- org.gradle.wrapper.GradleWrapperMain "$@" ;;
-esac
-
+# Collect all arguments for the java command, stacking://github.com/gradle/gradle/issues/25036)
 # Use "xargs" to parse quoted args.
 eval "set -- $(
         printf '%s\n' "$DEFAULT_JVM_OPTS $JAVA_OPTS $GRADLE_OPTS" |

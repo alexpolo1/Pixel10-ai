@@ -96,9 +96,7 @@ class MediaPipeModel private constructor(
                 val options = LlmInference.LlmInferenceOptions.builder()
                     .setModelPath(modelPath)
                     .setMaxTokens(2048)
-                    .setTopK(40)
-                    .setTemperature(0.7f)
-                    .setRandomSeed(42)
+                    .setMaxTopK(40)
                     .build()
 
                 val inference = LlmInference.createFromOptions(context, options)
