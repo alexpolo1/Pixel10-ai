@@ -132,6 +132,19 @@
                 android:textColor="@color/log_text"
                 android:textSize="13sp" />
 
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etHfToken"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="8dp"
+                android:hint="@string/hf_token_hint"
+                android:inputType="textPassword"
+                android:textColor="@color/on_surface"
+                android:textColorHint="@color/log_text"
+                android:textSize="13sp"
+                android:fontFamily="monospace"
+                android:backgroundTint="@color/primary" />
+
             <ProgressBar
                 android:id="@+id/progressDownload"
                 style="@android:style/Widget.ProgressBar.Horizontal"
@@ -142,32 +155,22 @@
                 android:visibility="gone" />
 
             <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnDownloadGemma3nE4b"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="@string/btn_download_gemma3n_e4b"
-                android:textSize="13sp"
-                app:cornerRadius="8dp" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnDownloadGemma3nE2b"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:text="@string/btn_download_gemma3n_e2b"
-                android:textSize="13sp"
-                app:cornerRadius="8dp" />
-
-            <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnDownloadModel"
                 style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/btn_download_gemma3_q4"
+                android:textSize="13sp"
+                app:cornerRadius="8dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnDownloadGemma3Q8"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
-                android:text="@string/btn_download_model"
+                android:text="@string/btn_download_gemma3_q8"
                 android:textSize="13sp"
                 app:cornerRadius="8dp" />
         </LinearLayout>
