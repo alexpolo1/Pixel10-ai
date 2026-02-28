@@ -1,17 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Pixel10 AI Server</string>
+    <string name="app_name">Pixel10 AI</string>
+    <string name="app_title">Pixel10 AI Server</string>
+    <string name="app_subtitle">On-device AI inference API</string>
+
+    <!-- Server status -->
     <string name="server_status_stopped">Server Stopped</string>
-    <string name="server_status_starting">Starting Server…</string>
+    <string name="server_status_starting">Starting Server\u2026</string>
     <string name="server_status_running">Server Running</string>
     <string name="server_status_error">Server Error</string>
-    <string name="btn_start">Start Server</string>
-    <string name="btn_stop">Stop Server</string>
-    <string name="model_loading">Loading AI model…</string>
+    <string name="server_url_placeholder">http://\u2014</string>
+
+    <!-- Model status -->
+    <string name="model_loading">Loading AI model\u2026</string>
     <string name="model_ready">AI model ready</string>
     <string name="model_error">AI model failed to load</string>
+    <string name="model_not_loaded">Model: not loaded</string>
+
+    <!-- Controls -->
+    <string name="btn_start">Start Server</string>
+    <string name="btn_stop">Stop Server</string>
+    <string name="port_label">Port:</string>
+    <string name="port_default">8080</string>
+    <string name="requests_served">Requests served: %d</string>
+    <string name="request_log_label">Request Log</string>
+
+    <!-- Notification -->
     <string name="notification_channel_name">AI Server</string>
-    <string name="notification_channel_desc">Pixel10 AI API Server status</string>
+    <string name="notification_channel_desc">Shows when the AI inference server is running</string>
     <string name="notification_title">Pixel10 AI Server</string>
-    <string name="notification_text">Serving AI inference on port %d</string>
+    <string name="notification_text">Serving on port %d \u2022 Tap to open</string>
 </resources>
