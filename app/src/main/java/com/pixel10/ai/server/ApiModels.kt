@@ -1,11 +1,18 @@
 package com.pixel10.ai.server
 
+import com.google.gson.JsonObject
 import com.google.gson.annotations.SerializedName
 
 /**
  * Request/response models for the AI API.
- * Follows an OpenAI-compatible schema for easy integration.
+ * Follows the OpenAI Chat Completions schema for easy integration with
+ * any OpenAI-compatible client (OpenClaw, LM Studio, Open WebUI, etc.).
+ *
+ * Tool/function calling is fully supported so coding agents can invoke
+ * tools (read_file, run_shell, etc.) through the standard OpenAI tool-use flow.
  */
+
+// ── Requests ──────────────────────────────────────────────────────────────────
 
 data class ChatRequest(
     val model: String = "pixel10-fast",
@@ -15,13 +22,50 @@ data class ChatRequest(
     val temperature: Float = 0.7f,
     val stream: Boolean = false,
     /** Thinking token budget. 0 = fast (no thinking). >0 = thinking mode. */
-    val thinking_budget: Int = 0
+    val thinking_budget: Int = 0,
+    /** Tool/function definitions available to the model. */
+    val tools: List<Tool>? = null,
+    /** "auto" | "none" | "required" — defaults to "auto" when tools are provided. */
+    val tool_choice: String? = null
 )
 
 data class Message(
     val role: String = "user",
-    val content: String = ""
+    /** Text content. Null when role=assistant and the model is calling a tool. */
+    val content: String? = null,
+    /** Set by the model when it wants to call one or more tools. */
+    val tool_calls: List<ToolCall>? = null,
+    /** Set on role=tool messages — references the tool_call.id being responded to. */
+    val tool_call_id: String? = null
 )
+
+// ── Tool / Function Calling ───────────────────────────────────────────────────
+
+data class Tool(
+    val type: String = "function",
+    val function: ToolFunction
+)
+
+data class ToolFunction(
+    val name: String,
+    val description: String = "",
+    /** JSON Schema object describing the function parameters. */
+    val parameters: JsonObject? = null
+)
+
+data class ToolCall(
+    val id: String,
+    val type: String = "function",
+    val function: FunctionCallDetail
+)
+
+data class FunctionCallDetail(
+    val name: String,
+    /** Arguments as a JSON-encoded string (matches OpenAI spec). */
+    val arguments: String
+)
+
+// ── Responses ─────────────────────────────────────────────────────────────────
 
 data class ChatResponse(
     val id: String,
@@ -36,8 +80,9 @@ data class ChatResponse(
 data class Choice(
     val index: Int = 0,
     val message: Message,
+    /** "stop" | "tool_calls" | "length" */
     val finish_reason: String = "stop",
-    /** Non-standard: reasoning/thinking trace, present only when thinking mode is used. */
+    /** Non-standard: reasoning trace, present only in thinking mode. */
     val thinking: String? = null
 )
 
@@ -47,12 +92,14 @@ data class Usage(
     val total_tokens: Int
 )
 
+// ── Streaming ─────────────────────────────────────────────────────────────────
+
 data class StreamChunk(
     val id: String,
     @SerializedName("object")
     val objectType: String = "chat.completion.chunk",
     val created: Long = System.currentTimeMillis() / 1000,
-    val model: String = "pixel10-on-device",
+    val model: String = "pixel10-fast",
     val choices: List<StreamChoice>
 )
 
@@ -66,6 +113,8 @@ data class Delta(
     val role: String? = null,
     val content: String? = null
 )
+
+// ── Models List ───────────────────────────────────────────────────────────────
 
 data class ModelInfo(
     val id: String,
@@ -81,14 +130,16 @@ data class ModelList(
     val data: List<ModelInfo> = listOf(
         ModelInfo(
             id = "pixel10-fast",
-            description = "Fast inference — no reasoning trace"
+            description = "Fast inference via Gemini 2.0 Flash — low latency, tool calling supported"
         ),
         ModelInfo(
             id = "pixel10-thinking",
-            description = "Thinking mode — includes step-by-step reasoning before answering"
+            description = "Thinking mode via Gemini 2.5 Flash — step-by-step reasoning before answering"
         )
     )
 )
+
+// ── Health / Errors ───────────────────────────────────────────────────────────
 
 data class ErrorResponse(
     val error: ErrorDetail
@@ -107,7 +158,7 @@ data class ServerStatus(
     val uptime_seconds: Long,
     val requests_served: Long,
     val endpoints: List<String> = listOf(
-        "POST /v1/chat/completions",
+        "POST /v1/chat/completions  (tools, streaming, thinking supported)",
         "POST /v1/completions",
         "GET  /v1/models",
         "GET  /health",
