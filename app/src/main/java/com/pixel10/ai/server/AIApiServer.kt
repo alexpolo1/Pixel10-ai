@@ -13,7 +13,14 @@ import java.util.concurrent.atomic.AtomicLong
  * Embedded HTTP server that exposes the on-device AI model as a REST API.
  *
  * Provides OpenAI-compatible endpoints so existing tools (curl, Python openai
- * library, etc.) can talk to this phone as if it were a cloud AI endpoint.
+ * library, OpenClaw, Open WebUI, etc.) can talk to this phone as if it were a
+ * cloud AI endpoint.
+ *
+ * Supported features:
+ *  - Multi-turn chat (full message history forwarded to the model)
+ *  - Tool / function calling (agents can invoke tools and receive results)
+ *  - Streaming (SSE)
+ *  - Thinking mode (extended reasoning via Gemini 2.5 Flash)
  *
  * Usage from any device on the same network:
  *   curl http://<phone-ip>:8080/v1/chat/completions \
@@ -39,7 +46,6 @@ class AIApiServer(
         log("[$count] ${method.name} $uri")
 
         return try {
-            // Add CORS headers to all responses
             when {
                 method == Method.OPTIONS -> corsPreflightResponse()
                 uri == "/" || uri == "/health" -> handleHealth()
@@ -56,7 +62,7 @@ class AIApiServer(
         }
     }
 
-    // ── Endpoint Handlers ──────────────────────────────────────────────
+    // ── Endpoint Handlers ──────────────────────────────────────────────────────
 
     private fun handleHealth(): Response {
         val status = ServerStatus(
@@ -81,62 +87,88 @@ class AIApiServer(
             return errorResponse(400, "messages array is required and must not be empty")
         }
 
-        val prompt = buildChatPrompt(request.messages)
-        val useThinking = request.thinking_budget > 0 || request.model.contains("think")
-        val budget = if (request.thinking_budget > 0) request.thinking_budget else 8192
-
-        log("Chat prompt (${request.messages.size} messages, ${prompt.length} chars, thinking=$useThinking)")
-
-        if (request.stream && !useThinking) {
-            return handleStreamingResponse(prompt, request)
-        }
-
         val id = "chatcmpl-${UUID.randomUUID().toString().take(8)}"
+        val useThinking = request.thinking_budget > 0 || request.model.contains("think")
+        val hasTools = !request.tools.isNullOrEmpty()
 
+        log("Chat: ${request.messages.size} messages, tools=${request.tools?.size ?: 0}, thinking=$useThinking, stream=${request.stream}")
+
+        // ── Thinking mode ──────────────────────────────────────────────────────
         if (useThinking) {
+            val prompt = buildFlatPrompt(request.messages)
+            val budget = if (request.thinking_budget > 0) request.thinking_budget else 8192
             val result = runBlocking {
                 model.generateWithThinking(prompt, request.max_tokens, budget)
             }
             log("Thinking: ${result.thinking.take(80)}...")
             log("Response: ${result.response.take(80)}...")
-
-            val chatResponse = ChatResponse(
-                id = id,
-                model = request.model,
-                choices = listOf(
-                    Choice(
-                        message = Message(role = "assistant", content = result.response),
-                        thinking = result.thinking.ifEmpty { null }
-                    )
-                ),
-                usage = Usage(
-                    prompt_tokens = estimateTokens(prompt),
-                    completion_tokens = estimateTokens(result.response),
-                    total_tokens = estimateTokens(prompt) + estimateTokens(result.response)
-                )
-            )
-            return jsonResponse(200, gson.toJson(chatResponse))
+            return jsonResponse(200, gson.toJson(ChatResponse(
+                id = id, model = request.model,
+                choices = listOf(Choice(
+                    message = Message(role = "assistant", content = result.response),
+                    thinking = result.thinking.ifEmpty { null }
+                )),
+                usage = buildUsage(result.response, result.response)
+            )))
         }
 
-        // Fast (non-streaming) generation
+        // ── Tool calling / multi-turn chat ─────────────────────────────────────
+        if (hasTools || request.messages.size > 1 || request.messages.any { it.role == "system" }) {
+            val convMessages = request.messages.map { it.toConvMessage() }
+            val toolDefs = request.tools?.map { it.toToolDef() } ?: emptyList()
+
+            val result = runBlocking {
+                model.chat(convMessages, toolDefs, request.max_tokens, request.temperature)
+            }
+
+            if (result.toolCalls != null) {
+                // Model wants to call tools — return tool_calls in the assistant message
+                log("Tool calls: ${result.toolCalls.joinToString { it.name }}")
+                val assistantMsg = Message(
+                    role = "assistant",
+                    content = null,
+                    tool_calls = result.toolCalls.map { tc ->
+                        ToolCall(
+                            id = tc.id,
+                            function = FunctionCallDetail(name = tc.name, arguments = tc.argsJson)
+                        )
+                    }
+                )
+                return jsonResponse(200, gson.toJson(ChatResponse(
+                    id = id, model = request.model,
+                    choices = listOf(Choice(
+                        message = assistantMsg,
+                        finish_reason = "tool_calls"
+                    )),
+                    usage = buildUsage("", "")
+                )))
+            }
+
+            val responseText = result.content ?: ""
+            log("Response: ${responseText.take(80)}...")
+            return jsonResponse(200, gson.toJson(ChatResponse(
+                id = id, model = request.model,
+                choices = listOf(Choice(message = Message(role = "assistant", content = responseText))),
+                usage = buildUsage(buildFlatPrompt(request.messages), responseText)
+            )))
+        }
+
+        // ── Simple single-turn (fast path) ─────────────────────────────────────
+        val prompt = buildFlatPrompt(request.messages)
+
+        if (request.stream) {
+            return handleStreamingResponse(id, prompt, request)
+        }
+
         val responseText = runBlocking {
             model.generate(prompt, request.max_tokens, request.temperature)
         }
         log("Response: ${responseText.take(80)}...")
-
-        val chatResponse = ChatResponse(
-            id = id,
-            model = request.model,
-            choices = listOf(
-                Choice(message = Message(role = "assistant", content = responseText))
-            ),
-            usage = Usage(
-                prompt_tokens = estimateTokens(prompt),
-                completion_tokens = estimateTokens(responseText),
-                total_tokens = estimateTokens(prompt) + estimateTokens(responseText)
-            )
-        )
-        return jsonResponse(200, gson.toJson(chatResponse))
+        return jsonResponse(200, gson.toJson(ChatResponse(
+            id = id, model = request.model,
+            choices = listOf(Choice(message = Message(role = "assistant", content = responseText))),
+            usage = buildUsage(prompt, responseText)
+        )))
     }
 
     private fun handleCompletions(session: IHTTPSession): Response {
@@ -152,37 +184,21 @@ class AIApiServer(
         val responseText = runBlocking {
             model.generate(prompt, request.max_tokens, request.temperature)
         }
-
         log("Response: ${responseText.take(80)}...")
 
-        val chatResponse = ChatResponse(
+        return jsonResponse(200, gson.toJson(ChatResponse(
             id = "cmpl-${UUID.randomUUID().toString().take(8)}",
-            choices = listOf(
-                Choice(
-                    message = Message(role = "assistant", content = responseText)
-                )
-            ),
-            usage = Usage(
-                prompt_tokens = estimateTokens(prompt),
-                completion_tokens = estimateTokens(responseText),
-                total_tokens = estimateTokens(prompt) + estimateTokens(responseText)
-            )
-        )
-
-        return jsonResponse(200, gson.toJson(chatResponse))
+            model = request.model,
+            choices = listOf(Choice(message = Message(role = "assistant", content = responseText))),
+            usage = buildUsage(prompt, responseText)
+        )))
     }
 
-    private fun handleStreamingResponse(prompt: String, request: ChatRequest): Response {
-        val id = "chatcmpl-${UUID.randomUUID().toString().take(8)}"
-
-        // For streaming, collect all tokens then return as SSE-formatted response.
-        // NanoHTTPD doesn't natively support chunked streaming in a clean way,
-        // so we buffer and return the full SSE payload.
+    private fun handleStreamingResponse(id: String, prompt: String, request: ChatRequest): Response {
         val sseBuilder = StringBuilder()
 
-        // Initial role chunk
         val roleChunk = StreamChunk(
-            id = id,
+            id = id, model = request.model,
             choices = listOf(StreamChoice(delta = Delta(role = "assistant")))
         )
         sseBuilder.append("data: ${gson.toJson(roleChunk)}\n\n")
@@ -190,16 +206,15 @@ class AIApiServer(
         val fullResponse = runBlocking {
             model.generateStreaming(prompt) { token ->
                 val chunk = StreamChunk(
-                    id = id,
+                    id = id, model = request.model,
                     choices = listOf(StreamChoice(delta = Delta(content = token)))
                 )
                 sseBuilder.append("data: ${gson.toJson(chunk)}\n\n")
             }
         }
 
-        // Final done chunk
         val doneChunk = StreamChunk(
-            id = id,
+            id = id, model = request.model,
             choices = listOf(StreamChoice(delta = Delta(), finish_reason = "stop"))
         )
         sseBuilder.append("data: ${gson.toJson(doneChunk)}\n\n")
@@ -214,20 +229,50 @@ class AIApiServer(
         )
     }
 
-    // ── Helpers ─────────────────────────────────────────────────────────
+    // ── Conversion helpers ─────────────────────────────────────────────────────
 
-    private fun buildChatPrompt(messages: List<Message>): String {
+    /** Flat prompt for simple / streaming calls (no tool use). */
+    private fun buildFlatPrompt(messages: List<Message>): String {
         val sb = StringBuilder()
         for (msg in messages) {
             when (msg.role) {
-                "system" -> sb.append("System: ${msg.content}\n\n")
-                "user" -> sb.append("User: ${msg.content}\n\n")
-                "assistant" -> sb.append("Assistant: ${msg.content}\n\n")
+                "system" -> sb.append("System: ${msg.content.orEmpty()}\n\n")
+                "user" -> sb.append("User: ${msg.content.orEmpty()}\n\n")
+                "assistant" -> sb.append("Assistant: ${msg.content.orEmpty()}\n\n")
             }
         }
         sb.append("Assistant: ")
         return sb.toString()
     }
+
+    private fun Message.toConvMessage(): OnDeviceModel.ConvMessage =
+        OnDeviceModel.ConvMessage(
+            role = role,
+            content = content,
+            toolCalls = tool_calls?.map { tc ->
+                OnDeviceModel.ToolCallData(
+                    id = tc.id,
+                    name = tc.function.name,
+                    argsJson = tc.function.arguments
+                )
+            },
+            toolCallId = tool_call_id
+        )
+
+    private fun Tool.toToolDef(): OnDeviceModel.ToolDef =
+        OnDeviceModel.ToolDef(
+            name = function.name,
+            description = function.description,
+            parametersJson = function.parameters?.toString()
+        )
+
+    private fun buildUsage(prompt: String, response: String) = Usage(
+        prompt_tokens = estimateTokens(prompt),
+        completion_tokens = estimateTokens(response),
+        total_tokens = estimateTokens(prompt) + estimateTokens(response)
+    )
+
+    // ── Utilities ──────────────────────────────────────────────────────────────
 
     private fun readBody(session: IHTTPSession): String {
         val contentLength = session.headers["content-length"]?.toIntOrNull() ?: 0
@@ -236,10 +281,7 @@ class AIApiServer(
         return String(buffer)
     }
 
-    private fun estimateTokens(text: String): Int {
-        // Rough estimate: ~4 characters per token
-        return (text.length / 4).coerceAtLeast(1)
-    }
+    private fun estimateTokens(text: String): Int = (text.length / 4).coerceAtLeast(1)
 
     private fun jsonResponse(statusCode: Int, json: String): Response {
         val status = when (statusCode) {
@@ -251,16 +293,11 @@ class AIApiServer(
         return newFixedLengthResponse(status, "application/json", json)
     }
 
-    private fun errorResponse(statusCode: Int, message: String): Response {
-        val error = ErrorResponse(
-            ErrorDetail(message = message, code = statusCode)
-        )
-        return jsonResponse(statusCode, gson.toJson(error))
-    }
+    private fun errorResponse(statusCode: Int, message: String): Response =
+        jsonResponse(statusCode, gson.toJson(ErrorResponse(ErrorDetail(message = message, code = statusCode))))
 
-    private fun corsPreflightResponse(): Response {
-        return newFixedLengthResponse(Response.Status.OK, MIME_PLAINTEXT, "")
-    }
+    private fun corsPreflightResponse(): Response =
+        newFixedLengthResponse(Response.Status.OK, MIME_PLAINTEXT, "")
 
     private fun addCorsHeaders(response: Response) {
         response.addHeader("Access-Control-Allow-Origin", "*")

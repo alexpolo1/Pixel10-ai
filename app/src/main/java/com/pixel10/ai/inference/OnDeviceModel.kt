@@ -49,13 +49,82 @@ interface OnDeviceModel {
         thinkingBudget: Int = 8192
     ): ThinkingResult = ThinkingResult(thinking = "", response = generate(prompt, maxTokens))
 
+    /**
+     * Multi-turn conversation with optional tool/function calling.
+     *
+     * Accepts the full message history so the model can reference prior turns,
+     * and an optional list of tool definitions the model may invoke.
+     *
+     * Returns a [ChatResult] which is either:
+     *  - A text reply ([ChatResult.content] set, [ChatResult.toolCalls] null)
+     *  - A tool invocation ([ChatResult.toolCalls] set, [ChatResult.content] null)
+     *
+     * The default implementation flattens the conversation to a plain prompt
+     * and calls [generate], so backends without native tool support still work
+     * (they just won't invoke tools).
+     */
+    suspend fun chat(
+        messages: List<ConvMessage>,
+        tools: List<ToolDef> = emptyList(),
+        maxTokens: Int = 1024,
+        temperature: Float = 0.7f
+    ): ChatResult {
+        val prompt = messages.joinToString("\n") { msg ->
+            when (msg.role) {
+                "system" -> "System: ${msg.content.orEmpty()}"
+                "user" -> "User: ${msg.content.orEmpty()}"
+                "assistant" -> "Assistant: ${msg.content.orEmpty()}"
+                "tool" -> "Tool result: ${msg.content.orEmpty()}"
+                else -> "${msg.role}: ${msg.content.orEmpty()}"
+            }
+        } + "\nAssistant:"
+        return ChatResult(content = generate(prompt, maxTokens, temperature))
+    }
+
     fun close()
+
+    // ── Supporting types ──────────────────────────────────────────────────────
 
     data class ThinkingResult(
         /** The model's internal reasoning trace (may be empty for non-thinking backends). */
         val thinking: String,
         /** The final answer shown to the user. */
         val response: String
+    )
+
+    /** A single message in a multi-turn conversation passed to [chat]. */
+    data class ConvMessage(
+        val role: String,
+        /** Text content — null when role=assistant and tool_calls is set. */
+        val content: String?,
+        val toolCalls: List<ToolCallData>? = null,
+        /** For role=tool messages: the tool_call id being responded to. */
+        val toolCallId: String? = null,
+        /** For role=tool messages: the function name (needed by Gemini). */
+        val toolName: String? = null
+    )
+
+    /** A tool/function definition passed to [chat]. */
+    data class ToolDef(
+        val name: String,
+        val description: String,
+        /** JSON Schema for the function parameters, as a raw JSON string. */
+        val parametersJson: String?
+    )
+
+    /** A tool call the model wants to make. */
+    data class ToolCallData(
+        val id: String,
+        val name: String,
+        /** Arguments as a JSON-encoded string. */
+        val argsJson: String
+    )
+
+    /** Result from [chat]. Exactly one of content/toolCalls will be non-null. */
+    data class ChatResult(
+        val content: String? = null,
+        val toolCalls: List<ToolCallData>? = null,
+        val finishReason: String = if (toolCalls != null) "tool_calls" else "stop"
     )
 
     companion object {
