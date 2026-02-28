@@ -11,8 +11,27 @@ android {
         applicationId = "com.pixel10.ai"
         minSdk = 31
         targetSdk = 35
-        versionCode = 7
-        versionName = "1.7.0"
+        versionCode = 8
+        versionName = "1.8.0"
+    }
+
+    val keystoreFile = rootProject.file("pixel10.keystore")
+    val keystoreEnv = System.getenv("KEYSTORE_PATH")
+
+    signingConfigs {
+        create("release") {
+            if (keystoreEnv != null) {
+                storeFile = file(keystoreEnv)
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            } else if (keystoreFile.exists()) {
+                storeFile = keystoreFile
+                storePassword = "pixel10ai"
+                keyAlias = "pixel10"
+                keyPassword = "pixel10ai"
+            }
+        }
     }
 
     buildTypes {
@@ -22,6 +41,16 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            val releaseSigning = signingConfigs.getByName("release")
+            if (releaseSigning.storeFile != null) {
+                signingConfig = releaseSigning
+            }
+        }
+        debug {
+            val releaseSigning = signingConfigs.getByName("release")
+            if (releaseSigning.storeFile != null) {
+                signingConfig = releaseSigning
+            }
         }
     }
 
