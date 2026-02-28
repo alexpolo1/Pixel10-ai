@@ -156,9 +156,10 @@ data class ServerStatus(
     val uptime_seconds: Long,
     val requests_served: Long,
     val endpoints: List<String> = listOf(
-        "POST /v1/chat/completions  (tools, streaming, thinking supported)",
+        "POST /v1/chat/completions  (tool calling + streaming)",
         "POST /v1/completions",
         "GET  /v1/models",
+        "GET  /v1/agent            (system prompt + tool definitions)",
         "GET  /health",
         "GET  /"
     )
