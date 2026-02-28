@@ -11,8 +11,8 @@ android {
         applicationId = "com.pixel10.ai"
         minSdk = 31
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 7
+        versionName = "1.7.0"
     }
 
     buildTypes {
