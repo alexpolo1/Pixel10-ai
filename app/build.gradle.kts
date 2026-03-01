@@ -15,15 +15,19 @@ android {
         versionName = "1.8.0"
     }
 
-    val keystoreFile = rootProject.file("pixel10.keystore")
+    val localProps = rootProject.file("local.properties")
+    val props = java.util.Properties().apply {
+        if (localProps.exists()) load(localProps.inputStream())
+    }
+    val keystoreFile = rootProject.file(props.getProperty("KEYSTORE_FILE", "pixel10.keystore"))
 
     signingConfigs {
         create("release") {
-            if (keystoreFile.exists()) {
+            if (keystoreFile.exists() && props.containsKey("KEYSTORE_PASSWORD")) {
                 storeFile = keystoreFile
-                storePassword = "pixel10ai"
-                keyAlias = "pixel10"
-                keyPassword = "pixel10ai"
+                storePassword = props.getProperty("KEYSTORE_PASSWORD")
+                keyAlias = props.getProperty("KEY_ALIAS", "pixel10")
+                keyPassword = props.getProperty("KEY_PASSWORD")
             }
         }
     }
